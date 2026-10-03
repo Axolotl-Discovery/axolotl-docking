@@ -1,0 +1,41 @@
+# Entorno principal de docking de Axolotl Discovery (CAPA A).
+# smina y ADFRsuite NO van aquí: se instalan como binarios aparte (ver scripts/instalar_entorno.sh),
+# porque meterlos en conda hace que el resolvedor degrade numpy/rdkit/openbabel.
+name: axolotl-docking
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - seaborn
+  - openpyxl
+  - xlsxwriter
+  - scikit-learn
+  - statsmodels
+  - biopython
+  - rdkit
+  - openbabel
+  - pymol-open-source
+  - py3dmol
+  - nglview
+  - pdb2pqr
+  - propka
+  - pdbfixer
+  - openmm
+  - gemmi
+  - mdanalysis
+  - mdtraj
+  - prolif
+  - fpocket
+  - jupyterlab
+  - ipykernel
+  - tqdm
+  - pyyaml
+  - vina
+  - meeko
+  - pip
+  - pip:
+      - plip

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Lanzador de la app "Docking" de Axolotl Discovery.
+# Resuelve la carpeta real de instalación aunque se llame por un enlace simbólico.
+SRC="${BASH_SOURCE[0]}"
+while [ -L "$SRC" ]; do
+  DIR="$(cd -P "$(dirname "$SRC")" && pwd)"; SRC="$(readlink "$SRC")"
+  [[ "$SRC" != /* ]] && SRC="$DIR/$SRC"
+done
+APP="$(cd -P "$(dirname "$SRC")/.." && pwd)"
+
+# La interfaz sólo usa la librería estándar: basta el python3 del sistema.
+# Si no existe, usa el de miniforge.
+for PY in python3 "$HOME/miniforge3/bin/python3" "$HOME/miniconda3/bin/python3"; do
+  if command -v "$PY" >/dev/null 2>&1; then exec "$PY" "$APP/axd/cli.py" "$@"; fi
+done
+echo "✘ No encontré python3. Instálalo con:  sudo apt install -y python3" >&2
+exit 1
