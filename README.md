@@ -83,6 +83,26 @@ Lo demás lo decide solo: si la estructura trae un ligando co-cristalizado, pone
 
 Puedes cambiar un proyecto de modo en `Docking abrir`.
 
+### Átomos no comunes (vanadio, platino, rutenio, cobre…)
+
+Al crear el proyecto la app pregunta **"¿Vas a trabajar con átomos poco comunes?"**. También lo detecta sola si un ligando trae un elemento que smina no conoce. En ese caso:
+
+- todo el proyecto (ligandos, controles y redocking) se dockea con **AutoDock4** (`autogrid4` + `autodock4`, vienen con ADFRsuite), para que las energías sean comparables entre sí;
+- los parámetros del elemento nuevo se añaden al archivo oficial `AD4.1_bound.dat` con la convención documentada por AutoDock: **Rii y epsii = x1 y D1 del Universal Force Field** (Rappé et al., *JACS* 1992, 114, 10024), volumen de la esfera de diámetro Rii, y solvatación/puentes de H como los metales de AD4. Todo queda escrito en `05_Analisis/parametros_metales.txt` (para la sección de métodos) y en `04_Docking/Mapas/AD4_axd.dat`;
+- cargas parciales **EEM** (Open Babel) conservando la carga formal total; los clusters se tratan como cuerpos rígidos.
+
+Los ligandos metálicos necesitan estructura 3D. Se pueden pedir como componente del PDB:
+
+| Escribe | Qué baja |
+|---|---|
+| `PDB:VO4` | ortovanadato |
+| `PDB:DVT` | decavanadato |
+| `PDB:XXX` | cualquier componente químico del PDB (coordenadas ideales) |
+
+o dar la ruta a un `.sdf`/`.mol2` 3D (por ejemplo, tetravanadato desde una estructura cristalina). Ojo con el estado de protonación: a pH fisiológico predominan formas protonadas (p. ej. H₂VO₄⁻); usa el archivo con la protonación que corresponda.
+
+> **Aviso:** son parámetros genéricos, no ajustados para cada metal. Usa las energías para comparar poses y sitios entre sí, y valida con dinámica molecular (o QM/MM) antes de sacar conclusiones.
+
 ### Pipeline
 
 | Paso | Qué hace |

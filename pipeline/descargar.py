@@ -113,6 +113,21 @@ def ejecutar(P, rehacer=False):
 
     for clave, carpeta in (("ligandos", "02_Ligandos"), ("controles", "03_Controles")):
         for l in P.cfg[clave]:
+            if l["fuente"] == "ccd":
+                if l.get("archivo") and os.path.exists(P.r(l["archivo"])):
+                    log(f"  = {l['id']}: {l['archivo']}"); continue
+                dest = P.r(carpeta, l["id"] + ".sdf")
+                for suf, desc in (("ideal", "coordenadas ideales"), ("model", "coordenadas de un cristal")):
+                    try:
+                        _bajar(f"https://files.rcsb.org/ligands/download/{l['codigo']}_{suf}.sdf", dest, intentos=2)
+                        l["archivo"] = P.rel(dest)
+                        log(f"  ✔ {l['id']}: componente PDB {l['codigo']} ({desc})")
+                        break
+                    except IOError:
+                        continue
+                else:
+                    log(f"  ✘ {l['id']}: el código PDB '{l['codigo']}' no existe o no tiene coordenadas"); fallos += 1
+                continue
             if l["fuente"] != "pubchem":
                 continue
             if l.get("archivo") and os.path.exists(P.r(l["archivo"])):

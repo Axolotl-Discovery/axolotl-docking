@@ -5,7 +5,37 @@ Open Babel sólo se usa para leer formatos que RDKit no lee bien (mol2/pdb) en m
 import os
 import shutil
 
+import metales
 from comun import correr, en_tmp, herramienta, log, titulo
+
+
+def elementos_de(ruta, smiles=None):
+    """Elementos presentes, sin sanitizar (los metales hipervalentes rompen a RDKit) y sin Open Babel
+    (Open Babel y RDKit en el mismo proceso pueden chocar)."""
+    from rdkit import Chem
+    if smiles:
+        m = Chem.MolFromSmiles(smiles, sanitize=False)
+        return {a.GetSymbol() for a in m.GetAtoms()} if m else set()
+    ext = os.path.splitext(ruta)[1].lower()
+    txt = open(ruta, errors="ignore").read()
+    if ext in (".sdf", ".mol"):
+        m = Chem.MolFromMolBlock(txt.split("$$$$")[0], sanitize=False, removeHs=False)
+        if m:
+            return {a.GetSymbol() for a in m.GetAtoms()}
+    if ext in (".pdb", ".pdbqt"):
+        return {(l[76:78].strip() or l[12:16].strip()[:1]).capitalize() for l in txt.splitlines()
+                if l[:6] in ("ATOM  ", "HETATM")}
+    if ext == ".mol2":
+        sec, els = False, set()
+        for l in txt.splitlines():
+            if l.startswith("@<TRIPOS>"):
+                sec = l.startswith("@<TRIPOS>ATOM"); continue
+            if sec and l.split():
+                els.add(l.split()[5].split(".")[0])
+        return els
+    if ext in (".smi", ".smiles"):
+        return elementos_de(None, txt.split()[0])
+    return set()
 
 
 def normalizar_sdf_texto(txt):
@@ -122,7 +152,17 @@ def ejecutar(P, rehacer=False):
                     continue
                 if l["fuente"] != "smiles" and not (l.get("archivo") and os.path.exists(P.r(l["archivo"]))):
                     raise ValueError("falta el archivo (corre el paso 'descargar')")
-                m = leer_molecula(P.r(l["archivo"]) if l.get("archivo") else None, l.get("smiles"))
+                ruta_l = P.r(l["archivo"]) if l.get("archivo") else None
+                els = elementos_de(ruta_l, l.get("smiles"))
+                if metales.es_metalico(els):
+                    if not ruta_l:
+                        raise ValueError("un ligando con metales necesita estructura 3D (archivo o PDB:CÓDIGO), no SMILES")
+                    info = metales.preparar_en_subproceso(ruta_l, salida, l["id"])
+                    log(f"  ✔ {l['id']:32s} {info['n']:3d} átomos  ⚛ {', '.join(info['elementos'])}  carga {info['carga']:+d}"
+                        f"  · cargas {info['metodo']} · rígido · se dockea con AutoDock4"
+                        + ("  [control]" if control else ""))
+                    continue
+                m = leer_molecula(ruta_l, l.get("smiles"))
                 m, nota = preparar_3d(m)
                 a_pdbqt(m, salida, l["id"])
                 from rdkit.Chem import Descriptors

@@ -43,6 +43,8 @@ DOCKING_DEFECTO = {
     "num_modes": 9,
     "energy_range": 4,
     "cpu": 0,  # 0 = todos los núcleos
+    "ad4_runs": 20,         # sólo con átomos no comunes (AutoDock4): corridas GA por semilla
+    "ad4_evals": 2500000,   # evaluaciones de energía por corrida
 }
 
 

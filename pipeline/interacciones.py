@@ -139,6 +139,18 @@ def interacciones_plip(complejo):
     return filas
 
 
+def interacciones_plip_sub(complejo):
+    """PLIP en un proceso aparte: usa Open Babel, que puede chocar con RDKit dentro del mismo proceso."""
+    import json
+    import subprocess
+    import sys
+    r = subprocess.run([sys.executable, os.path.abspath(__file__), "plip", complejo], capture_output=True, text=True)
+    lineas = [l for l in r.stdout.splitlines() if l.startswith("[")]
+    if r.returncode != 0 or not lineas:
+        raise RuntimeError((r.stderr.strip().splitlines() or [f"código {r.returncode}"])[-1][:80])
+    return json.loads(lineas[-1])
+
+
 # ---------------------------------------------------------------- respaldo geométrico
 CARGADOS = {("ASP", "OD1"), ("ASP", "OD2"), ("GLU", "OE1"), ("GLU", "OE2"), ("LYS", "NZ"), ("ARG", "NH1"),
             ("ARG", "NH2"), ("ARG", "NE"), ("HIS", "ND1"), ("HIS", "NE2")}
@@ -179,10 +191,10 @@ def interacciones_geometricas(complejo):
 # ---------------------------------------------------------------- paso
 def ejecutar(P, rehacer=False):
     titulo("7 · Complejos e interacciones")
-    try:
-        import plip  # noqa: F401
+    import importlib.util
+    if importlib.util.find_spec("plip"):
         motor = "PLIP"
-    except ImportError:
+    else:
         motor = "geométrico"
         log("  · PLIP no está instalado: uso criterios geométricos por distancia")
     poses = sorted(glob.glob(P.r("04_Docking", "MejoresPoses", "*__*.pdbqt")))
@@ -202,7 +214,7 @@ def ejecutar(P, rehacer=False):
                 log(f"  ✘ {did} + {lid}: falta el receptor limpio"); fallos += 1; continue
             usado = motor
             try:
-                filas = interacciones_plip(comp) if motor == "PLIP" else interacciones_geometricas(comp)
+                filas = interacciones_plip_sub(comp) if motor == "PLIP" else interacciones_geometricas(comp)
             except Exception as e:  # noqa: BLE001
                 log(f"    ⚠ PLIP falló con {lid} ({str(e)[:60]}); uso criterio geométrico")
                 filas, usado = interacciones_geometricas(comp), "geométrico"
@@ -240,3 +252,10 @@ def ejecutar(P, rehacer=False):
         pass
     log(f"\n  Complejos en 04_Docking/Complejos/ · tablas en 05_Analisis/interacciones_*.csv · método: {motor}")
     return fallos
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+    if sys.argv[1] == "plip":
+        print(json.dumps(interacciones_plip(sys.argv[2])))

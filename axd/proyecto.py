@@ -166,6 +166,7 @@ def asistente_nuevo():
     ui.ok(f"Proyecto creado en {ruta}")
     p = C.cargar_proyecto(ruta)
 
+    pregunta_atomos_raros(ruta, p, avanzado=(modo == "avanzado"))
     if modo == "basico":
         dianas_basico(ruta, p)
         ligandos_basico(ruta, p, controles=False)
@@ -181,6 +182,29 @@ def asistente_nuevo():
         if ui.si_no("¿Ajustar parámetros de docking? (por defecto: 3 semillas, exhaustiveness 32)", False):
             asistente_parametros(ruta, p)
     return ruta
+
+
+def pregunta_atomos_raros(ruta, p, avanzado=False):
+    """Sección para ligandos con metales u otros átomos que smina/Vina no conocen."""
+    if not ui.si_no("¿Vas a trabajar con átomos poco comunes en los ligandos (vanadio, platino, rutenio, cobre…)?",
+                    False):
+        return
+    ui.titulo("Átomos no comunes")
+    ui.info("smina/Vina no tienen parámetros para esos átomos, así que el proyecto se dockeará con AutoDock4:")
+    ui.info("  · parámetros del metal derivados del Universal Force Field (UFF), escritos y documentados")
+    ui.info("    en 05_Analisis/parametros_metales.txt para tu sección de métodos;")
+    ui.info("  · cargas parciales EEM conservando la carga total; clusters (oxovanadatos) como cuerpo rígido;")
+    ui.info("  · TODO el proyecto (incluidos controles) usa AutoDock4 para que las energías sean comparables.")
+    ui.aviso("Son parámetros genéricos: compara energías entre sí y valida con dinámica molecular.")
+    ui.info("Los ligandos metálicos necesitan estructura 3D. Puedes escribirlos como componente del PDB:")
+    ui.info("  PDB:VO4 = ortovanadato · PDB:DVT = decavanadato · o la ruta a un .sdf/.mol2 3D (p. ej. tetravanadato)")
+    p["docking"]["motor"] = "ad4"
+    if avanzado:
+        p["docking"]["ad4_runs"] = ui.preguntar_int("Corridas de algoritmo genético por semilla", p["docking"].get("ad4_runs", 20), 1, 500)
+        p["docking"]["ad4_evals"] = ui.preguntar_int("Evaluaciones de energía por corrida (2.5 M estándar, 25 M exhaustivo)",
+                                                     p["docking"].get("ad4_evals", 2500000), 10000, 100000000)
+    C.guardar_proyecto(ruta, p)
+    ui.ok("Proyecto configurado para AutoDock4 con átomos no comunes.")
 
 
 # ---------------------------------------------------------------- modo básico
@@ -261,11 +285,20 @@ def dianas_basico(ruta, p):
         C.guardar_proyecto(ruta, p)
 
 
+NOMBRES_CCD = {"VO4": "ortovanadato", "DVT": "decavanadato"}
+
+
 def _agregar_texto(t, agregar, carpeta, ruta, resolver=True):
     """Interpreta una línea: ruta a archivo/carpeta, SID/CID, SMILES o nombre."""
     ruta_local = ui.a_ruta_linux(t)
     if os.path.isdir(ruta_local) or (os.path.isfile(ruta_local) and ruta_local.lower().endswith(EXT_LIGANDO)):
         return _importar_rutas(ruta_local, agregar, carpeta, ruta)
+    m = re.fullmatch(r"(?i)(pdb|ccd)\s*[:_-]?\s*([A-Za-z0-9]{1,5})", t.strip())
+    if m:  # componente químico del PDB (coordenadas 3D, sirve para metales y clusters)
+        codigo = m.group(2).upper()
+        agregar({"nombre": NOMBRES_CCD.get(codigo, codigo), "fuente": "ccd", "codigo": codigo})
+        ui.ok(f"Componente PDB {codigo}" + (f" ({NOMBRES_CCD[codigo]})" if codigo in NOMBRES_CCD else ""))
+        return 1
     partes = t.split()
     if len(partes) == 2 and len(partes[1]) >= 4 and _parece_smiles(partes[1]) and not partes[1].isdigit():  # "Aspirina CC(=O)Oc1..."
         agregar({"nombre": partes[0], "fuente": "smiles", "smiles": partes[1]})
@@ -559,6 +592,9 @@ def asistente_parametros(ruta, p):
     d["num_modes"] = ui.preguntar_int("Número de poses por corrida", d["num_modes"], 1, 50)
     d["energy_range"] = ui.preguntar_int("Rango de energía (kcal/mol)", d["energy_range"], 1, 20)
     d["cpu"] = ui.preguntar_int("Núcleos de CPU (0 = todos)", d["cpu"], 0, 512)
+    if d.get("motor") == "ad4":
+        d["ad4_runs"] = ui.preguntar_int("AutoDock4: corridas GA por semilla", d.get("ad4_runs", 20), 1, 500)
+        d["ad4_evals"] = ui.preguntar_int("AutoDock4: evaluaciones por corrida", d.get("ad4_evals", 2500000), 10000, 100000000)
     C.guardar_proyecto(ruta, p)
     ui.ok("Parámetros guardados.")
 
@@ -580,8 +616,12 @@ def resumen_proyecto(ruta, p):
             x["id"] + (ui.gris(f"→{x['diana']}") if x.get("diana") else "") for x in xs[:15]) + (" …" if len(xs) > 15 else "")))
     d = p["docking"]
     nt = sum(len(v) for v in runner.corridas_esperadas(p).values())
-    print(f"   {ui.negrita('Docking')}: {len(d['semillas'])} semillas · exh {d['exhaustiveness']} · "
-          f"{d['num_modes']} poses · cpu {d['cpu'] or 'todos'}  →  {nt} corridas")
+    if d.get("motor") == "ad4":
+        print(f"   {ui.negrita('Docking')}: AutoDock4 (átomos no comunes) · {len(d['semillas'])} semillas × "
+              f"{d.get('ad4_runs', 20)} corridas GA  →  {nt} corridas")
+    else:
+        print(f"   {ui.negrita('Docking')}: {len(d['semillas'])} semillas · exh {d['exhaustiveness']} · "
+              f"{d['num_modes']} poses · cpu {d['cpu'] or 'todos'}  →  {nt} corridas")
 
 
 def editar_proyecto(ruta):
@@ -596,6 +636,7 @@ def editar_proyecto(ruta):
             ("quitar", "Quitar una diana / ligando / control"),
             ("param", "Parámetros de docking"),
             ("modo", f"Cambiar a modo {'avanzado' if basico else 'básico'}"),
+            ("raros", "Átomos no comunes / motor: " + ("AutoDock4" if p["docking"].get("motor") == "ad4" else "smina")),
             ("abrir", "Abrir la carpeta en el Explorador de Windows"),
         ])
         if op is None:
@@ -606,6 +647,12 @@ def editar_proyecto(ruta):
             ligandos_basico(ruta, p, False) if basico else asistente_ligandos(ruta, p, False)
         elif op == "ctrl":
             ligandos_basico(ruta, p, True) if basico else asistente_ligandos(ruta, p, True)
+        elif op == "raros":
+            if p["docking"].get("motor") == "ad4":
+                if ui.si_no("¿Volver a smina? (sólo si ya no hay ligandos con metales)", False):
+                    p["docking"]["motor"] = "smina"; C.guardar_proyecto(ruta, p)
+            else:
+                pregunta_atomos_raros(ruta, p, avanzado=not basico)
         elif op == "modo":
             p["modo"] = "avanzado" if basico else "basico"
             C.guardar_proyecto(ruta, p)

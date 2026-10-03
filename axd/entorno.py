@@ -6,7 +6,8 @@ import subprocess
 from . import config as C
 from . import ui
 
-OPCIONALES = {"PyMOL", "ProLIF", "MDAnalysis", "PLIP", "Vina", "matplotlib", "prepare_ligand"}
+OPCIONALES = {"PyMOL", "ProLIF", "MDAnalysis", "PLIP", "Vina", "matplotlib", "prepare_ligand",
+              "autogrid4", "autodock4"}  # AutoDock4 sólo hace falta para átomos no comunes (metales)
 
 MODULOS = [("rdkit", "RDKit"), ("meeko", "Meeko"), ("openbabel.pybel", "Open Babel"), ("pdbfixer", "PDBFixer"),
            ("openmm", "OpenMM"), ("gemmi", "gemmi"), ("numpy", "numpy"), ("pandas", "pandas"),
@@ -56,7 +57,8 @@ def doctor(reparar_preguntando=True):
         ui.error(f"no existe el entorno '{g['entorno']}'" + (f" (hay: {', '.join(envs)})" if envs else ""))
         problemas += 1
     for nombre, carpeta in (("smina", g["tools_bin"]), ("prepare_receptor", g["adfr_bin"]),
-                            ("prepare_ligand", g["adfr_bin"])):
+                            ("prepare_ligand", g["adfr_bin"]), ("autogrid4", g["adfr_bin"]),
+                            ("autodock4", g["adfr_bin"])):
         ruta = os.path.join(os.path.expanduser(carpeta), nombre)
         if os.path.exists(ruta) and os.access(ruta, os.X_OK):
             ui.ok(f"{nombre}: {ruta}")
