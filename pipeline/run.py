@@ -27,7 +27,7 @@ def main(argv):
     pasos = [p for p in ORDEN if p in pasos]
     P = comun.Proyecto(proy)
     t0 = time.time()
-    print(f"Axolotl Docking · {P.cfg['codigo']} · {time.strftime('%Y-%m-%d %H:%M')}")
+    print(f"Axolotl Docking · {P.cfg['nombre']} · {time.strftime('%Y-%m-%d %H:%M')}")
     print(f"Pasos: {' → '.join(pasos)}" + ("  (rehaciendo todo)" if rehacer else ""))
     import descargar, docking, ligandos, receptores, resumen  # noqa: E401
     funciones = {"descargar": descargar.ejecutar, "receptores": receptores.ejecutar, "ligandos": ligandos.ejecutar,

@@ -1,5 +1,6 @@
 """Paso 'resumen': tabla de afinidades (media ± DE), eficiencia de ligando, Δ vs control y mejores poses."""
 import os
+import re
 
 from comun import afinidad, completo, log, modelo1, pesados_pdbqt, titulo
 
@@ -38,8 +39,9 @@ def ejecutar(P, rehacer=False):
     mat = res.pivot(index="ligando", columns="diana", values="afinidad_media")
     mat.to_csv(P.r("05_Analisis", "matriz_afinidad.csv"))
 
+    xlsx_nombre = re.sub(r"[^A-Za-z0-9._-]+", "_", P.cfg["nombre"]) + "_afinidades.xlsx"
     try:
-        with pd.ExcelWriter(P.r("05_Analisis", f"{P.cfg['codigo']}_afinidades.xlsx")) as xw:
+        with pd.ExcelWriter(P.r("05_Analisis", xlsx_nombre)) as xw:
             res.to_excel(xw, sheet_name="Resumen", index=False)
             mat.to_excel(xw, sheet_name="Matriz")
             df.drop(columns=["archivo"]).to_excel(xw, sheet_name="Corridas", index=False)
@@ -65,7 +67,7 @@ def ejecutar(P, rehacer=False):
                 + ("  ◆ control" if r.tipo == "control" else ""))
     log("\n  Archivos:")
     log("    05_Analisis/afinidades_resumen.csv · matriz_afinidad.csv · afinidades_corridas.csv"
-        + (f" · {P.cfg['codigo']}_afinidades.xlsx" if xlsx else ""))
+        + (f" · {xlsx_nombre}" if xlsx else ""))
     log(f"    04_Docking/MejoresPoses/  ({len(mejores)} poses)")
     log("  (Δ ctrl negativo = el ligando supera al control en afinidad predicha)")
     return 0

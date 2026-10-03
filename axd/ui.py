@@ -25,14 +25,61 @@ def _c(code):
 rosa, verde, amarillo, rojo, gris, negrita, cian = (
     _c("38;5;205"), _c("32"), _c("33"), _c("31"), _c("90"), _c("1"), _c("36"))
 
-BANNER = r"""
-     _      _
-    ( \    / )      A X O L O T L   D I S C O V E R Y
-  ~~ \ \__/ / ~~    ─────────────────────────────────
-     ( o  o )       Docking · herramienta de terminal
-      \ ‿‿ /
-   ~~~/    \~~~
+ARTE = [
+    "...g............................g...",
+    "...gg..........................gg...",
+    "...fgf........................fgf...",
+    "....fgf......................fgf....",
+    ".....fg.......oooooooo.......gf.....",
+    "......fg...ooPPPPPPPPPPoo...gf......",
+    ".......gfooPPPPPPPPPPPPPPoofg.......",
+    "g.f....fooPPPPPPPPPPPPPPPPoof....f.g",
+    "gggff..ooPPPPPPPPPPPPPPPPPPoo..ffggg",
+    "f.fgggfoPPPWKKPPPPPPPPWKKPPPofgggf.f",
+    "...ffggoPPPKKKPPPPPPPPKKKPPPoggff...",
+    "......ooPPPKKKPPPPPPPPKKKPPPoo......",
+    ".......oPPPPPPPPPPPPPPPPPPPPo.......",
+    "....f.foPCCPLLLmLLLLmLLLCCPPof.f....",
+    ".f.fgggooPPLLLLLmmmmLLLLLPPoogggf.f.",
+    ".gggg.ffooLLLLLLLLLLLLLLLLooff.gggg.",
+    ".g.f.....ooLLLLLLLLLLLLLLoo.....f.g.",
+    "...........ooLLLLLLLLLLoo...........",
+    "..............oooooooo..............",
+    "....................................",
+]
+
+# colores del ajolote (RGB)
+PALETA = {"P": (246, 166, 193), "o": (184, 67, 111), "L": (253, 217, 230), "g": (233, 87, 142),
+          "f": (255, 156, 194), "K": (43, 27, 46), "W": (255, 255, 255), "C": (255, 111, 156),
+          "m": (142, 47, 87)}
+
+ARTE_ASCII = r"""
+   \\  \\                 //  //
+    \\__\\   .-------.   //__//
+   ===   ) /  o     o  \ (   ===
+    //‾‾// |    \___/    | \\‾‾\\
+   //  //   '._________.'   \\  \\
 """
+
+
+def _arte_color():
+    """Dibuja el pixel art con medios bloques (▀): cada celda = 2 píxeles verticales, color verdadero."""
+    lineas = []
+    for y in range(0, len(ARTE), 2):
+        sup, inf = ARTE[y], ARTE[y + 1] if y + 1 < len(ARTE) else "." * len(ARTE[y])
+        l = ""
+        for a, b in zip(sup, inf):
+            ca, cb = PALETA.get(a), PALETA.get(b)
+            if ca and cb:
+                l += f"\033[38;2;{ca[0]};{ca[1]};{ca[2]}m\033[48;2;{cb[0]};{cb[1]};{cb[2]}m▀\033[0m"
+            elif ca:
+                l += f"\033[38;2;{ca[0]};{ca[1]};{ca[2]}m▀\033[0m"
+            elif cb:
+                l += f"\033[38;2;{cb[0]};{cb[1]};{cb[2]}m▄\033[0m"
+            else:
+                l += " "
+        lineas.append(l)
+    return lineas
 
 
 class Cancelado(Exception):
@@ -40,7 +87,25 @@ class Cancelado(Exception):
 
 
 def banner(version=""):
-    print(rosa(BANNER.rstrip("\n")) + (gris(f"  v{version}") if version else ""))
+    texto = ["", "", "", negrita(rosa("A X O L O T L   D O C K I N G")),
+             gris("docking molecular sin tanto show"), "",
+             gris(f"v{version}  ·  por Axolotl Discovery") if version else gris("por Axolotl Discovery")]
+    if not COLOR:
+        print(ARTE_ASCII)
+        print("  AXOLOTL DOCKING" + (f"  v{version}" if version else ""))
+        print()
+        return
+    arte = _arte_color()
+    ancho = shutil.get_terminal_size((100, 30)).columns
+    print()
+    if ancho >= len(ARTE[0]) + 42:
+        for i, l in enumerate(arte):
+            print("  " + l + "    " + (texto[i] if i < len(texto) else ""))
+    else:
+        for l in arte:
+            print("  " + l)
+        for t in texto[3:]:
+            print("  " + t)
     print()
 
 

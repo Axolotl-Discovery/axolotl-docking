@@ -61,20 +61,32 @@ Docking actualizar         bajar la última versión de GitHub
 
 Si estás dentro de la carpeta de un proyecto no hace falta poner `[carpeta]`. Las rutas se pueden pegar **como en Windows** (`C:\Users\Me\Desktop\...`) o arrastrando la carpeta a la terminal; TAB autocompleta.
 
-### Qué te pregunta el asistente
+### Modo básico y modo avanzado
 
-1. **Carpeta y código** del proyecto (`AXD-XXX-26-01`), cliente y descripción.
-2. **Dianas**: PDB ID (RCSB), UniProt (AlphaFold DB) o archivo local. Muestra las cadenas y ligandos co-cristalizados para que elijas. Caja por:
-   - ligando co-cristalizado (centro + margen, mínimo por eje) → habilita **redocking**,
-   - residuos del sitio activo, docking ciego o coordenadas manuales.
-3. **Ligandos y controles**: nombres de PubChem, lista `.txt/.csv` (`nombre` o `nombre,SMILES`), carpeta o archivo (`.sdf .mol .mol2 .pdb .smi .pdbqt`, SDF con varias moléculas incluido) o SMILES. Cada control se puede asignar a su diana.
-4. **Parámetros**: semillas (3 por defecto), exhaustiveness (32), poses, CPU.
+Al crear un proyecto eliges el modo:
+
+**Básico (todo automático)** — sólo te pregunta:
+1. Carpeta y nombre del proyecto.
+2. Proteínas: un **PDB ID** (`1M17`), un **ID de UniProt** (`P00533`, se baja de AlphaFold) o la ruta a un `.pdb/.cif`.
+3. Ligandos, uno por línea, en lo que tengas a la mano:
+   - nombre común: `quercetin`
+   - **CID** de PubChem: `5280343` o `CID 5280343`
+   - **SID** de PubChem: `SID 482105756` (se traduce a su compuesto)
+   - SMILES con nombre: `Aspirina CC(=O)Oc1ccccc1C(=O)O`
+   - ruta a un archivo o carpeta con estructuras (`.sdf .mol .mol2 .pdb .smi .pdbqt`)
+4. (Opcional) un control positivo.
+
+Lo demás lo decide solo: si la estructura trae un ligando co-cristalizado, pone la caja ahí, conserva esa cadena y sus cofactores/iones, y valida con redocking; si no hay ligando, hace docking ciego (con exhaustiveness 64). Arranca el pipeline completo en segundo plano.
+
+**Avanzado** — tú eliges cadenas, cofactores, tipo de caja (ligando de referencia, residuos del sitio, ciego o coordenadas), margen, semillas, exhaustiveness, poses, CPU y qué pasos correr.
+
+Puedes cambiar un proyecto de modo en `Docking abrir`.
 
 ### Pipeline
 
 | Paso | Qué hace |
 |---|---|
-| `descargar` | RCSB / AlphaFold / PubChem (3D si existe), y SDF del ligando cristalográfico |
+| `descargar` | RCSB / AlphaFold / PubChem por nombre, CID o SID (3D si existe), y SDF del ligando cristalográfico |
 | `receptores` | cadenas + altloc A, cofactores elegidos, PDBFixer (sin reconstruir lazos), `prepare_receptor -A hydrogens`, caja desde coordenadas reales → `04_Docking/cajas.json` |
 | `ligandos` | quita sales, 3D con RDKit (ETKDGv3 + MMFF) si hace falta, Meeko con macrociclos rígidos |
 | `redocking` | redockea el ligando cristalográfico y calcula RMSD simétrico (criterio ≤ 2 Å) |
@@ -84,7 +96,7 @@ Si estás dentro de la carpeta de un proyecto no hace falta poner `[carpeta]`. L
 ### Estructura de un proyecto
 
 ```
-AXD-XXX-26-01/
+mi_proyecto/
 ├─ axd.json                 configuración (la edita el asistente)
 ├─ 01_Receptores/           crudos + limpios/
 ├─ 02_Ligandos/  03_Controles/ (ligando_cristal/)

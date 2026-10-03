@@ -145,7 +145,10 @@ def matriz(P, rehacer=False):
         es = []
         for s in d["semillas"]:
             sal = P.r("04_Docking", "Resultados", diana["id"], f"{lig['id']}_s{s}.pdbqt")
-            e, previa = correr_smina(smina, rec, lp, cajas[diana["id"]], sal, s, d, rehacer)
+            dd = d
+            if P.cfg.get("modo") == "basico" and cajas[diana["id"]].get("modo") == "ciego":
+                dd = dict(d, exhaustiveness=max(int(d["exhaustiveness"]), 64))  # ciego necesita más búsqueda
+            e, previa = correr_smina(smina, rec, lp, cajas[diana["id"]], sal, s, dd, rehacer)
             if e is None:
                 fallos += 1
             else:

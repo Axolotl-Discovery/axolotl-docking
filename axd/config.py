@@ -107,13 +107,12 @@ def buscar_proyecto(desde=None):
         d = padre
 
 
-def nuevo_proyecto(ruta, codigo, cliente="", descripcion=""):
+def nuevo_proyecto(ruta, nombre, modo="basico"):
     for sub in CARPETAS:
         os.makedirs(os.path.join(ruta, sub), exist_ok=True)
     p = {
-        "codigo": codigo,
-        "cliente": cliente,
-        "descripcion": descripcion,
+        "nombre": nombre,
+        "modo": modo,  # "basico" (todo automático) o "avanzado"
         "creado": _dt.date.today().isoformat(),
         "version_axd": VERSION,
         "dianas": [],
@@ -130,20 +129,22 @@ def nuevo_proyecto(ruta, codigo, cliente="", descripcion=""):
     rd = os.path.join(ruta, "README.md")
     if not os.path.exists(rd):
         open(rd, "w").write(
-            f"# {codigo}\n\n{('Cliente: ' + cliente) if cliente else ''}\n\n{descripcion}\n\n"
-            "Proyecto creado con **Axolotl Docking** (`Docking`).\n\n"
+            f"# {nombre}\n\n"
+            "Proyecto de docking creado con **Axolotl Docking** (`Docking`).\n\n"
             "| Carpeta | Contenido |\n|---|---|\n"
             "| 01_Receptores | estructuras crudas (PDB/AlphaFold) y `limpios/` |\n"
             "| 02_Ligandos | ligandos de estudio (SDF) |\n"
             "| 03_Controles | controles positivos y ligandos cristalográficos |\n"
             "| 04_Docking | receptores/ligandos PDBQT, `cajas.json`, resultados y logs |\n"
-            "| 05_Analisis | tablas de afinidad |\n| 06_Figuras | figuras |\n| 07_Reporte | reporte final |\n")
+            "| 05_Analisis | tablas de afinidad |\n| 06_Figuras | figuras |\n| 07_Reporte | reporte |\n")
     return p
 
 
 def cargar_proyecto(ruta):
     p = json.load(open(os.path.join(ruta, ARCHIVO_PROYECTO), encoding="utf-8"))
     p.setdefault("dianas", []); p.setdefault("ligandos", []); p.setdefault("controles", [])
+    p.setdefault("nombre", p.get("codigo") or os.path.basename(os.path.abspath(ruta)))
+    p.setdefault("modo", "avanzado")  # proyectos creados con versiones anteriores
     d = dict(DOCKING_DEFECTO); d.update(p.get("docking", {})); p["docking"] = d
     return p
 

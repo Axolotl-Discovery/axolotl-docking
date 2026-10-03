@@ -58,6 +58,24 @@ def _spec(texto):
     return a[0], (a[1] if len(a) > 1 and a[1] else None)
 
 
+def _resolver_auto(d, crudo):
+    """Modo básico: decide cadena, cofactores y caja a partir de la estructura."""
+    from axd.proyecto import COFACTORES, METALES, decision_auto, inspeccionar_pdb
+    cads, het = inspeccionar_pdb(crudo)
+    ref, cad = decision_auto(het, cads)
+    if d.get("cadenas") == "auto":
+        d["cadenas"] = cad
+    if d.get("cofactores") == "auto":
+        d["cofactores"] = sorted({f"{h[0]}:{h[1]}" for h in het
+                                  if h[0] in COFACTORES | METALES and (not d["cadenas"] or h[1] in d["cadenas"])})
+    if d.get("caja", {}).get("modo") == "auto":
+        d["caja"] = ({"modo": "ligando", "ref": ref, "margen": 10.0, "minimo": 22.0, "auto": True} if ref
+                     else {"modo": "ciego", "margen": 10.0, "auto": True})
+    log(f"    automático → cadena {d['cadenas'] or 'todas'}"
+        + (f", cofactores {', '.join(d['cofactores'])}" if d["cofactores"] else "")
+        + (f", sitio = ligando {ref}" if d["caja"]["modo"] == "ligando" else ", docking ciego (no hay ligando co-cristalizado)"))
+
+
 def ejecutar(P, rehacer=False):
     titulo("2 · Receptores y cajas de docking")
     prep = herramienta("prepare_receptor", ["~/tools/ADFRsuite-1.0/bin/prepare_receptor"])
@@ -74,6 +92,7 @@ def ejecutar(P, rehacer=False):
 
     cajas = P.cajas()
     fallos = 0
+    cambios = False
     for d in P.cfg["dianas"]:
         log(f"\n  ▸ {d['id']}")
         if not d.get("archivo") or not os.path.exists(P.r(d["archivo"])):
@@ -82,6 +101,9 @@ def ejecutar(P, rehacer=False):
         tmp = en_tmp("rec")
         try:
             crudo = _a_pdb(P.r(d["archivo"]), tmp)
+            if "auto" in (d.get("cadenas"), d.get("cofactores"), d.get("caja", {}).get("modo")):
+                _resolver_auto(d, crudo)
+                cambios = True
             cadenas = set(d.get("cadenas") or "")
             cofs = [_spec(x) for x in d.get("cofactores", [])]
             caja_cfg = d.get("caja", {"modo": "ciego", "margen": 10})
@@ -185,5 +207,7 @@ def ejecutar(P, rehacer=False):
             shutil.rmtree(tmp, ignore_errors=True)
 
     json.dump(cajas, open(P.r("04_Docking", "cajas.json"), "w"), indent=2)
+    if cambios:
+        P.guardar()  # guarda lo que se decidió automáticamente (cadenas, cofactores, caja)
     log(f"\n  Receptores: {len(P.cfg['dianas']) - fallos}/{len(P.cfg['dianas'])} listos · cajas en 04_Docking/cajas.json")
     return fallos

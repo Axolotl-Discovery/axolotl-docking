@@ -29,11 +29,27 @@ def _bajar(url, destino, timeout=90, intentos=3):
 
 
 def _pubchem(consulta, destino_base):
-    """Descarga SDF 3D (o 2D si no hay 3D). Devuelve la ruta."""
-    if consulta.strip().isdigit():
-        base = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{consulta.strip()}/SDF"
+    """Descarga SDF 3D (o 2D si no hay 3D). Acepta nombre, CID ('5280343', 'CID 5280343')
+    o SID de sustancia ('SID 482105756'): el SID se traduce a su CID estandarizado."""
+    from axd.proyecto import interpretar_pubchem
+    pug = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+    tipo, v = interpretar_pubchem(consulta)
+    if tipo == "sid":
+        cid = None
+        try:
+            with urllib.request.urlopen(urllib.request.Request(f"{pug}/substance/sid/{v}/cids/TXT", headers=UA),
+                                        timeout=30) as r:
+                cid = (r.read().decode().split() or [None])[0]
+        except Exception:  # noqa: BLE001
+            cid = None
+        if not cid:  # sustancia sin compuesto estandarizado: se usa el registro de la sustancia
+            _bajar(f"{pug}/substance/sid/{v}/SDF", destino_base + ".sdf")
+            return destino_base + ".sdf", f"sustancia SID {v} (se generará 3D con RDKit)"
+        tipo, v = "cid", cid
+    if tipo == "cid":
+        base = f"{pug}/compound/cid/{v}/SDF"
     else:
-        base = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{urllib.parse.quote(consulta)}/SDF"
+        base = f"{pug}/compound/name/{urllib.parse.quote(v)}/SDF"
     try:
         _bajar(base + "?record_type=3d", destino_base + ".sdf")
         return destino_base + ".sdf", "3D"

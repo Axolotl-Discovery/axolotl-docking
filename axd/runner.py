@@ -207,7 +207,7 @@ def corridas_esperadas(p):
 
 def mostrar_avance(proy):
     p = C.cargar_proyecto(proy)
-    ui.titulo(f"Avance · {p['codigo']}")
+    ui.titulo(f"Avance · {p['nombre']}")
     e = estado(proy)
     if e and e["vivo"]:
         ui.ok(f"Corriendo (PID {e['pid']}) · pasos: {', '.join(e['pasos'])} · desde {e['inicio']}")

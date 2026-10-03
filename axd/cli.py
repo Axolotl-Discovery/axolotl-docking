@@ -70,7 +70,13 @@ def menu_correr(proy):
     if not p["ligandos"] and not p["controles"]:
         ui.aviso("Primero añade ligandos (Editar proyecto).")
         return
-    hay_ref = any(d.get("caja", {}).get("modo") == "ligando" for d in p["dianas"])
+    hay_ref = any(d.get("caja", {}).get("modo") in ("ligando", "auto") for d in p["dianas"])
+    if p.get("modo") == "basico":
+        # modo básico: todo el pipeline, en segundo plano, sin preguntas
+        if not ui.si_no("¿Arranco el docking completo ahora? (corre en segundo plano)", True):
+            return
+        runner.ejecutar(proy, [x for x in runner.PASOS if x != "redocking" or hay_ref], fondo=True)
+        return
     op = ui.menu("¿Qué corremos?", [
         ("todo", "Pipeline completo" + ui.gris(" (descargar → receptores → ligandos → "
                                                 + ("redocking → " if hay_ref else "") + "docking → resumen)")),
@@ -142,7 +148,7 @@ def menu_principal():
 def despachar(op, arg, interactivo=False):
     if op == "nuevo":
         ruta = proyecto.asistente_nuevo()
-        if ruta and ui.si_no("¿Correr el pipeline ahora?", True):
+        if ruta:
             menu_correr(ruta)
     elif op == "abrir":
         r = elegir_proyecto(arg)

@@ -46,14 +46,51 @@ def descargar_alphafold(uniprot, destino):
     return info
 
 
-def pubchem_cid(consulta):
-    q = urllib.parse.quote(consulta)
+PUG = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+
+
+def interpretar_pubchem(texto):
+    """'SID 482105756' / 'sid:482105756' → ('sid','482105756'); 'CID 5280343' o '5280343' → ('cid',…);
+    cualquier otra cosa → ('nombre', texto)."""
+    t = texto.strip()
+    m = re.fullmatch(r"(?i)(sid|cid)\s*[:#_-]?\s*(\d+)", t)
+    if m:
+        return m.group(1).lower(), m.group(2)
+    if t.isdigit():
+        return "cid", t
+    return "nombre", t
+
+
+def _pug_txt(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "axolotl-docking"}), timeout=20) as r:
+        return r.read().decode().split("\n")
+
+
+def pubchem_resolver(texto):
+    """Devuelve (cid, titulo) consultando PubChem, o (None, None) si no hay red/no existe.
+    Los SID (sustancias) se traducen a su CID estandarizado."""
+    tipo, v = interpretar_pubchem(texto)
     try:
-        with urllib.request.urlopen(f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{q}/cids/TXT",
-                                    timeout=20) as r:
-            return r.read().decode().split()[0]
+        if tipo == "sid":
+            cids = [x for x in _pug_txt(f"{PUG}/substance/sid/{v}/cids/TXT") if x.strip()]
+            cid = cids[0].strip() if cids else None
+        elif tipo == "cid":
+            cid = v
+        else:
+            cid = _pug_txt(f"{PUG}/compound/name/{urllib.parse.quote(v)}/cids/TXT")[0].strip()
+        if not cid:
+            return None, None
+        try:
+            titulo = _pug_txt(f"{PUG}/compound/cid/{cid}/property/Title/TXT")[0].strip()
+        except Exception:
+            titulo = None
+        return cid, titulo
     except Exception:
-        return None
+        return None, None
+
+
+def pubchem_cid(consulta):  # compatibilidad
+    return pubchem_resolver(consulta)[0]
 
 
 # ---------------------------------------------------------------- inspección de PDB
@@ -108,37 +145,200 @@ def _id_unico(base, existentes):
 def asistente_nuevo():
     g = C.cargar_global()
     ui.titulo("Proyecto nuevo")
+    modo = ui.menu("¿Qué modo prefieres?", [
+        ("basico", "Básico  — tú das proteína y ligandos, todo lo demás es automático"),
+        ("avanzado", "Avanzado — eliges cadenas, cofactores, caja, semillas, exhaustiveness…"),
+    ], defecto=1, salir="Cancelar")
+    if not modo:
+        return None
     ui.info("Puedes pegar rutas de Windows (C:\\Users\\...) o arrastrar la carpeta a la terminal.")
     base_def = g.get("carpeta_proyectos") or os.getcwd()
     base = ui.preguntar_ruta("Carpeta donde se creará el proyecto", base_def, tipo="carpeta")
-    yy = _dt.date.today().strftime("%y")
-    codigo = ui.preguntar("Código del proyecto", f"AXD-XXX-{yy}-01", obligatorio=True, editable=True)
-    cliente = ui.preguntar("Cliente (opcional)", "")
-    desc = ui.preguntar("Descripción corta (opcional)", "")
-    ruta = os.path.join(base, ui.nombre_seguro(codigo))
-    if cliente and os.path.basename(base.rstrip("/")) != cliente.strip():
-        if ui.si_no(f"¿Crear dentro de una subcarpeta del cliente ('{cliente.strip()}')?", False):
-            ruta = os.path.join(base, cliente.strip(), ui.nombre_seguro(codigo))
+    nombre = ui.preguntar("Nombre del proyecto", f"docking_{_dt.date.today().strftime('%Y%m%d')}", obligatorio=True)
+    ruta = os.path.join(base, ui.nombre_seguro(nombre))
     if os.path.exists(os.path.join(ruta, C.ARCHIVO_PROYECTO)):
-        ui.aviso("Ya existe un proyecto ahí; lo abro en lugar de crearlo.")
+        ui.aviso("Ya existe un proyecto con ese nombre ahí; lo abro en lugar de crearlo.")
         return ruta
-    C.nuevo_proyecto(ruta, codigo.strip(), cliente.strip(), desc.strip())
+    C.nuevo_proyecto(ruta, nombre.strip(), modo)
     g["carpeta_proyectos"] = base
     C.guardar_global(g)
     C.registrar_reciente(ruta)
     ui.ok(f"Proyecto creado en {ruta}")
-
     p = C.cargar_proyecto(ruta)
-    if ui.si_no("¿Añadir las dianas (receptores) ahora?", True):
-        bucle_dianas(ruta, p)
-    if ui.si_no("¿Añadir los ligandos ahora?", True):
-        asistente_ligandos(ruta, p, controles=False)
-    if ui.si_no("¿Añadir controles positivos?", True):
-        asistente_ligandos(ruta, p, controles=True)
-    if ui.si_no("¿Ajustar parámetros de docking? (por defecto: 3 semillas, exhaustiveness 32)", False):
-        asistente_parametros(ruta, p)
-    resumen_proyecto(ruta, p)
+
+    if modo == "basico":
+        dianas_basico(ruta, p)
+        ligandos_basico(ruta, p, controles=False)
+        if ui.si_no("¿Quieres agregar un control positivo (un fármaco conocido para comparar)?", False):
+            ligandos_basico(ruta, p, controles=True)
+    else:
+        if ui.si_no("¿Añadir las dianas (receptores) ahora?", True):
+            bucle_dianas(ruta, p)
+        if ui.si_no("¿Añadir los ligandos ahora?", True):
+            asistente_ligandos(ruta, p, controles=False)
+        if ui.si_no("¿Añadir controles positivos?", True):
+            asistente_ligandos(ruta, p, controles=True)
+        if ui.si_no("¿Ajustar parámetros de docking? (por defecto: 3 semillas, exhaustiveness 32)", False):
+            asistente_parametros(ruta, p)
     return ruta
+
+
+# ---------------------------------------------------------------- modo básico
+UNIPROT_RE = r"[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}"
+COFACTORES = {"HEM", "HEC", "HEA", "FAD", "FMN", "NAD", "NAI", "NAP", "NDP", "SAM", "SAH", "PLP", "COA", "TPP",
+              "SF4", "FES", "F3S", "CLA", "BCL"}
+METALES = {"ZN", "MG", "MN", "FE", "FE2", "CU", "CU1", "CO", "NI", "CA"}
+
+
+def decision_auto(het, cadenas):
+    """Elige ligando de referencia (el más grande que no sea aditivo/cofactor/ion) y su cadena.
+    Devuelve (ref 'RES:CAD' o None, cadena)."""
+    cand = sorted([h for h in het if h[0] not in ADITIVOS | COFACTORES | METALES and h[3] >= 8],
+                  key=lambda h: -h[3])
+    if cand:
+        return f"{cand[0][0]}:{cand[0][1]}", cand[0][1]
+    return None, (list(cadenas)[0] if cadenas else "")
+
+
+def dianas_basico(ruta, p):
+    ui.titulo("Proteínas (dianas)")
+    ui.info("Escribe un PDB ID (p. ej. 1M17), un ID de UniProt (se baja de AlphaFold) o la ruta a un .pdb/.cif.")
+    ui.info("Una por línea; Enter vacío para terminar.")
+    crudos = os.path.join(ruta, "01_Receptores")
+    while True:
+        ui._modo_rutas(True)
+        try:
+            t = ui.preguntar(f"Proteína #{len(p['dianas']) + 1}", "" if p["dianas"] else None,
+                             obligatorio=not p["dianas"])
+        finally:
+            ui._modo_rutas(False)
+        if not t:
+            break
+        d = {"cadenas": "auto", "cofactores": "auto", "caja": {"modo": "auto"}}
+        ruta_local = ui.a_ruta_linux(t)
+        arch = None
+        if os.path.isfile(ruta_local):
+            nombre = os.path.splitext(os.path.basename(ruta_local))[0]
+            ext = os.path.splitext(ruta_local)[1].lower() or ".pdb"
+            arch = os.path.join(crudos, ui.nombre_seguro(nombre) + ext)
+            if os.path.abspath(ruta_local) != os.path.abspath(arch):
+                shutil.copy(ruta_local, arch)
+            d.update(fuente="archivo", nombre=nombre, archivo=os.path.relpath(arch, ruta))
+            ui.ok(f"Archivo copiado: 01_Receptores/{os.path.basename(arch)}")
+        elif re.fullmatch(r"[0-9][A-Za-z0-9]{3}", t.strip()):
+            pdb = t.strip().upper()
+            d.update(fuente="pdb", pdb=pdb, nombre=pdb)
+            try:
+                arch = descargar_pdb(pdb, os.path.join(crudos, pdb))
+                d["archivo"] = os.path.relpath(arch, ruta)
+                ui.ok(f"{pdb} descargado de RCSB")
+            except Exception:
+                ui.aviso(f"No pude descargar {pdb} ahora; se intentará al correr el pipeline.")
+        elif re.fullmatch(UNIPROT_RE, t.strip().upper()):
+            uni = t.strip().upper()
+            d.update(fuente="alphafold", uniprot=uni, nombre=f"AF-{uni}")
+            try:
+                arch = os.path.join(crudos, f"AF-{uni}.pdb")
+                info = descargar_alphafold(uni, arch)
+                d["archivo"] = os.path.relpath(arch, ruta)
+                ui.ok(f"Modelo AlphaFold de {uni} descargado ({info.get('uniprotDescription', '')})")
+            except Exception:
+                ui.aviso(f"No pude descargar {uni} de AlphaFold ahora; se intentará al correr el pipeline.")
+                arch = None
+        else:
+            ui.aviso("No reconozco eso como PDB ID, UniProt ni archivo existente.")
+            continue
+        if arch and os.path.exists(arch):
+            cadenas, het = inspeccionar_pdb(arch)
+            ref, cad = decision_auto(het, cadenas)
+            if ref:
+                ui.info(f"Sitio de unión: ligando co-cristalizado {ref} → caja ahí y validación por redocking")
+            elif cadenas:
+                ui.info(f"Sin ligando co-cristalizado → docking ciego sobre la cadena {cad}")
+        base_id = ui.nombre_seguro(d["nombre"])
+        d["id"] = _id_unico(base_id, {x["id"] for x in p["dianas"]})
+        p["dianas"].append(d)
+        C.guardar_proyecto(ruta, p)
+
+
+def _agregar_texto(t, agregar, carpeta, ruta, resolver=True):
+    """Interpreta una línea: ruta a archivo/carpeta, SID/CID, SMILES o nombre."""
+    ruta_local = ui.a_ruta_linux(t)
+    if os.path.isdir(ruta_local) or (os.path.isfile(ruta_local) and ruta_local.lower().endswith(EXT_LIGANDO)):
+        return _importar_rutas(ruta_local, agregar, carpeta, ruta)
+    partes = t.split()
+    if len(partes) == 2 and len(partes[1]) >= 4 and _parece_smiles(partes[1]) and not partes[1].isdigit():  # "Aspirina CC(=O)Oc1..."
+        agregar({"nombre": partes[0], "fuente": "smiles", "smiles": partes[1]})
+        ui.ok(f"{partes[0]} (SMILES)")
+        return 1
+    if _parece_smiles(t) and interpretar_pubchem(t)[0] == "nombre":
+        agregar({"nombre": "smiles_1", "fuente": "smiles", "smiles": t})
+        ui.ok("SMILES añadido (tip: escribe 'Nombre SMILES' para ponerle nombre)")
+        return 1
+    tipo, v = interpretar_pubchem(t)
+    cid, titulo = pubchem_resolver(t) if resolver else (None, None)
+    if cid:
+        nombre = titulo if (titulo and tipo != "nombre") else (t if tipo == "nombre" else f"{tipo.upper()}_{v}")
+        ui.ok(f"{t} → {titulo or 'CID ' + cid} (CID {cid})")
+    else:
+        nombre = t if tipo == "nombre" else f"{tipo.upper()}_{v}"
+        ui.aviso(f"No lo pude verificar en PubChem ahora ('{t}'); lo intentaré al descargar.")
+    agregar({"nombre": nombre, "fuente": "pubchem", "consulta": t, "cid": cid})
+    return 1
+
+
+def _importar_rutas(ruta_local, agregar, carpeta, ruta):
+    if os.path.isdir(ruta_local):
+        archivos = sorted(os.path.join(ruta_local, x) for x in os.listdir(ruta_local) if x.lower().endswith(EXT_LIGANDO))
+    else:
+        archivos = [ruta_local]
+    n = 0
+    for a in archivos:
+        ext = os.path.splitext(a)[1].lower()
+        if ext == ".sdf" and len(_partir_sdf(a)) > 1:
+            for nom, bloque in _partir_sdf(a):
+                e = {"nombre": nom, "fuente": "archivo"}
+                agregar(e)
+                destino = os.path.join(carpeta, e["id"] + ".sdf")
+                open(destino, "w").write(bloque)
+                e["archivo"] = os.path.relpath(destino, ruta); n += 1
+        else:
+            e = {"nombre": os.path.splitext(os.path.basename(a))[0], "fuente": "archivo"}
+            agregar(e)
+            destino = os.path.join(carpeta, e["id"] + ext)
+            if os.path.abspath(a) != os.path.abspath(destino):
+                shutil.copy(a, destino)
+            e["archivo"] = os.path.relpath(destino, ruta); n += 1
+    ui.ok(f"{n} molécula(s) importadas de {os.path.basename(ruta_local.rstrip('/'))}")
+    return n
+
+
+def ligandos_basico(ruta, p, controles=False):
+    clave = "controles" if controles else "ligandos"
+    carpeta = os.path.join(ruta, "03_Controles" if controles else "02_Ligandos")
+    ui.titulo("Controles positivos" if controles else "Ligandos")
+    ui.info("Escribe uno por línea: nombre (quercetin), CID (5280343), SID (SID 482105756), 'Nombre SMILES',")
+    ui.info("o la ruta a un archivo/carpeta con estructuras. Enter vacío para terminar.")
+    ids = {x["id"] for x in p["ligandos"] + p["controles"]}
+    nuevos = []
+
+    def agregar(e):
+        e["id"] = _id_unico(ui.nombre_seguro(e["nombre"]), ids)
+        ids.add(e["id"]); nuevos.append(e)
+
+    while True:
+        ui._modo_rutas(True)
+        try:
+            obligatorio = not controles and not p["ligandos"] and not nuevos
+            t = ui.preguntar(f"{'Control' if controles else 'Ligando'} #{len(p[clave]) + len(nuevos) + 1}",
+                             None if obligatorio else "", obligatorio=obligatorio)
+        finally:
+            ui._modo_rutas(False)
+        if not t:
+            break
+        _agregar_texto(t, agregar, carpeta, ruta)
+    p[clave].extend(nuevos)
+    C.guardar_proyecto(ruta, p)
 
 
 # ---------------------------------------------------------------- dianas
@@ -264,7 +464,7 @@ def asistente_ligandos(ruta, p, controles=False):
 
     while True:
         modo = ui.menu(f"¿Cómo quieres añadir {etiqueta}?", [
-            ("pubchem", "Escribir nombres (se descargan de PubChem)"),
+            ("pubchem", "Escribir nombres, CID o SID (se descargan de PubChem)"),
             ("lista", "Archivo de lista .txt/.csv (un nombre por línea, o nombre,SMILES)"),
             ("carpeta", "Carpeta con estructuras (.sdf .mol .mol2 .pdb .smi)"),
             ("archivos", "Un archivo de estructura (SDF con una o varias moléculas, etc.)"),
@@ -273,17 +473,12 @@ def asistente_ligandos(ruta, p, controles=False):
         if not modo:
             break
         if modo == "pubchem":
-            ui.info("Escribe un compuesto por línea (nombre común o CID). Línea vacía para terminar.")
+            ui.info("Un compuesto por línea: nombre común, CID (5280343) o SID (SID 482105756). Vacío para terminar.")
             while True:
                 n = ui.preguntar("Compuesto", "")
                 if not n:
                     break
-                cid = pubchem_cid(n)
-                if cid:
-                    ui.ok(f"{n} → CID {cid}")
-                else:
-                    ui.aviso(f"No lo encontré en PubChem ahora mismo ('{n}'); lo intentaré al descargar.")
-                agregar({"nombre": n, "fuente": "pubchem", "consulta": n, "cid": cid})
+                _agregar_texto(n, agregar, carpeta, ruta)
         elif modo == "lista":
             f = ui.preguntar_ruta("Archivo de lista", tipo="archivo")
             for linea in open(f, encoding="utf-8-sig", errors="ignore"):
@@ -365,13 +560,14 @@ def asistente_parametros(ruta, p):
 
 # ---------------------------------------------------------------- resumen / edición
 def resumen_proyecto(ruta, p):
-    ui.titulo(f"{p['codigo']}" + (f" · {p['cliente']}" if p.get("cliente") else ""))
+    ui.titulo(f"{p['nombre']}  ·  modo {'básico' if p.get('modo') == 'basico' else 'avanzado'}")
     print(f"   {ui.gris('Ruta:')} {ruta}")
     print(f"   {ui.negrita('Dianas')} ({len(p['dianas'])}):")
     for d in p["dianas"]:
         c = d.get("caja", {})
         det = {"ligando": f"ref {c.get('ref')}", "residuos": f"residuos {c.get('residuos')}",
-               "ciego": "ciego", "manual": f"centro {c.get('center')}"}.get(c.get("modo"), "?")
+               "ciego": "ciego", "manual": f"centro {c.get('center')}",
+               "auto": "automática"}.get(c.get("modo"), "?")
         print(f"     · {d['id']:22s} cadenas {d.get('cadenas') or 'todas':6s} caja: {det}")
     for clave, et in (("ligandos", "Ligandos"), ("controles", "Controles")):
         xs = p[clave]
@@ -387,22 +583,28 @@ def editar_proyecto(ruta):
     while True:
         p = C.cargar_proyecto(ruta)
         resumen_proyecto(ruta, p)
+        basico = p.get("modo") == "basico"
         op = ui.menu("Editar proyecto", [
             ("diana", "Añadir diana"),
             ("lig", "Añadir ligandos"),
             ("ctrl", "Añadir controles positivos"),
             ("quitar", "Quitar una diana / ligando / control"),
             ("param", "Parámetros de docking"),
+            ("modo", f"Cambiar a modo {'avanzado' if basico else 'básico'}"),
             ("abrir", "Abrir la carpeta en el Explorador de Windows"),
         ])
         if op is None:
             return
         if op == "diana":
-            asistente_diana(ruta, p)
+            dianas_basico(ruta, p) if basico else asistente_diana(ruta, p)
         elif op == "lig":
-            asistente_ligandos(ruta, p, False)
+            ligandos_basico(ruta, p, False) if basico else asistente_ligandos(ruta, p, False)
         elif op == "ctrl":
-            asistente_ligandos(ruta, p, True)
+            ligandos_basico(ruta, p, True) if basico else asistente_ligandos(ruta, p, True)
+        elif op == "modo":
+            p["modo"] = "avanzado" if basico else "basico"
+            C.guardar_proyecto(ruta, p)
+            ui.ok(f"Modo {p['modo']}.")
         elif op == "param":
             asistente_parametros(ruta, p)
         elif op == "abrir":
