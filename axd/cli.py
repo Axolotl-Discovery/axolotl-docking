@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from axd import config as C  # noqa: E402
-from axd import entorno, proyecto, runner, ui  # noqa: E402
+from axd import entorno, proyecto, resultados, runner, ui  # noqa: E402
 
 AYUDA = f"""
 {ui.negrita('Docking')} — Axolotl Discovery  (v{C.VERSION})
@@ -15,6 +15,7 @@ Uso:  Docking                    abre el menú interactivo
       Docking nuevo              asistente para crear un proyecto
       Docking abrir   [carpeta]  ver/editar dianas, ligandos y parámetros
       Docking correr  [carpeta]  correr el pipeline (completo o por pasos)
+      Docking resultados [carpeta]  tablas de afinidad, interacciones, abrir complejos/Excel
       Docking avance  [carpeta]  ver cuántas corridas van  (Docking avance --vivo: se actualiza solo)
       Docking log     [carpeta]  ver el log en vivo
       Docking detener [carpeta]  detener el trabajo en segundo plano
@@ -129,6 +130,7 @@ def menu_principal():
             ("nuevo", "Proyecto nuevo"),
             ("abrir", "Abrir / editar proyecto"),
             ("correr", "Correr pipeline"),
+            ("resultados", "Ver resultados (tablas, interacciones, abrir archivos)"),
             ("avance", "Ver avance"),
             ("log", "Ver log en vivo"),
             ("detener", "Detener trabajo"),
@@ -156,6 +158,9 @@ def despachar(op, arg, interactivo=False):
     elif op == "correr":
         r = elegir_proyecto(arg)
         r and menu_correr(r)
+    elif op == "resultados":
+        r = elegir_proyecto(arg)
+        r and resultados.menu_resultados(r)
     elif op == "avance":
         vivo = VIVO or (interactivo and ui.si_no("¿Verlo en vivo (se actualiza solo)?", True))
         r = elegir_proyecto(arg, preguntar=interactivo)
@@ -191,7 +196,7 @@ def despachar(op, arg, interactivo=False):
 
 ALIAS = {"new": "nuevo", "crear": "nuevo", "editar": "abrir", "open": "abrir", "run": "correr", "pipeline": "correr",
          "status": "avance", "estado": "avance", "stop": "detener", "resume": "reanudar", "doctor": "entorno",
-         "update": "actualizar", "logs": "log"}
+         "update": "actualizar", "logs": "log", "results": "resultados", "ver": "resultados"}
 
 
 VIVO = False
@@ -216,7 +221,7 @@ def main(argv=None):
             entorno.doctor()
         elif op == "entorno" and arg == "instalar":
             entorno.instalar(argv[2:])
-        elif op in ("nuevo", "abrir", "correr", "avance", "log", "detener", "reanudar", "entorno", "actualizar"):
+        elif op in ("nuevo", "abrir", "correr", "resultados", "avance", "log", "detener", "reanudar", "entorno", "actualizar"):
             despachar(op, arg)
         else:
             ui.error(f"No conozco el comando '{argv[0]}'.")

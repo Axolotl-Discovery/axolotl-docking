@@ -29,6 +29,7 @@ CARPETAS = [
     "04_Docking/Redocking",
     "04_Docking/Resultados",
     "04_Docking/MejoresPoses",
+    "04_Docking/Complejos",
     "04_Docking/logs",
     "05_Analisis",
     "06_Figuras",

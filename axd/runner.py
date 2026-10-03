@@ -10,7 +10,7 @@ import time
 from . import config as C
 from . import ui
 
-PASOS = ["descargar", "receptores", "ligandos", "redocking", "docking", "resumen"]
+PASOS = ["descargar", "receptores", "ligandos", "redocking", "docking", "resumen", "interacciones"]
 DESCRIPCION_PASOS = {
     "descargar": "Descargar estructuras (RCSB / AlphaFold) y ligandos (PubChem)",
     "receptores": "Limpiar receptores (PDBFixer + prepare_receptor) y calcular cajas",
@@ -18,6 +18,7 @@ DESCRIPCION_PASOS = {
     "redocking": "Validación por redocking del ligando cristalográfico (RMSD)",
     "docking": "Docking smina: todos los ligandos × todas las dianas × semillas",
     "resumen": "Tabla de afinidades (media ± DE, LE, Δ vs control) y mejores poses",
+    "interacciones": "Complejo proteína+ligando en un PDB y análisis de interacciones (PLIP)",
 }
 
 

@@ -13,7 +13,7 @@ sys.stdout.reconfigure(line_buffering=True)
 
 import comun  # noqa: E402
 
-ORDEN = ["descargar", "receptores", "ligandos", "redocking", "docking", "resumen"]
+ORDEN = ["descargar", "receptores", "ligandos", "redocking", "docking", "resumen", "interacciones"]
 
 
 def main(argv):
@@ -29,9 +29,10 @@ def main(argv):
     t0 = time.time()
     print(f"Axolotl Docking · {P.cfg['nombre']} · {time.strftime('%Y-%m-%d %H:%M')}")
     print(f"Pasos: {' → '.join(pasos)}" + ("  (rehaciendo todo)" if rehacer else ""))
-    import descargar, docking, ligandos, receptores, resumen  # noqa: E401
+    import descargar, docking, interacciones, ligandos, receptores, resumen  # noqa: E401
     funciones = {"descargar": descargar.ejecutar, "receptores": receptores.ejecutar, "ligandos": ligandos.ejecutar,
-                 "redocking": docking.redocking, "docking": docking.matriz, "resumen": resumen.ejecutar}
+                 "redocking": docking.redocking, "docking": docking.matriz, "resumen": resumen.ejecutar,
+                 "interacciones": interacciones.ejecutar}
     total_fallos = 0
     for paso in pasos:
         try:

@@ -51,7 +51,8 @@ Docking                    menú interactivo
 Docking nuevo              asistente para crear un proyecto
 Docking abrir   [carpeta]  ver/editar dianas, ligandos y parámetros
 Docking correr  [carpeta]  correr el pipeline (completo o por pasos)
-Docking avance  [carpeta]  cuántas corridas van + tiempo restante
+Docking resultados [carpeta]  tablas de afinidad, redocking, interacciones; abrir complejos y Excel
+Docking avance  [carpeta]  cuántas corridas van + tiempo restante (--vivo: se actualiza solo)
 Docking log     [carpeta]  log en vivo
 Docking detener [carpeta]  detener el trabajo en segundo plano
 Docking reanudar[carpeta]  retomar donde se quedó (corte de luz, reinicio…)
@@ -92,6 +93,15 @@ Puedes cambiar un proyecto de modo en `Docking abrir`.
 | `redocking` | redockea el ligando cristalográfico y calcula RMSD simétrico (criterio ≤ 2 Å) |
 | `docking` | smina: ligandos × dianas × semillas, en `/tmp` (rutas con espacios OK), escritura atómica, **reanudable** |
 | `resumen` | media ± DE, mejor, eficiencia de ligando, Δ vs control → CSV + Excel, mejores poses |
+| `interacciones` | **complejo proteína + ligando en un solo PDB** (con hidrógenos y enlaces) + pose en SDF, y análisis de interacciones con PLIP: puentes de H, hidrofóbicas, apilamiento π, catión-π, puentes salinos, halógeno, agua y metal (respaldo geométrico si PLIP falla) |
+
+### Ver resultados en la terminal
+
+`Docking resultados` (o "Ver resultados" en el menú) muestra:
+
+- tabla de afinidades por diana (la mejor resaltada), matriz ligando × diana y validación por redocking;
+- interacciones por complejo (conteo por tipo) y el detalle residuo por residuo con distancias;
+- abrir un complejo en **PyMOL** (dentro de WSL) o con el programa predeterminado de Windows, abrir el Excel o la carpeta.
 
 ### Estructura de un proyecto
 
@@ -100,8 +110,8 @@ mi_proyecto/
 ├─ axd.json                 configuración (la edita el asistente)
 ├─ 01_Receptores/           crudos + limpios/
 ├─ 02_Ligandos/  03_Controles/ (ligando_cristal/)
-├─ 04_Docking/  Receptores/ Ligandos/ Controles/ Redocking/ Resultados/<diana>/ MejoresPoses/ cajas.json logs/
-├─ 05_Analisis/             afinidades_resumen.csv, matriz_afinidad.csv, redocking_resumen.csv, *.xlsx
+├─ 04_Docking/  Receptores/ Ligandos/ Controles/ Redocking/ Resultados/<diana>/ MejoresPoses/ Complejos/ cajas.json logs/
+├─ 05_Analisis/             afinidades_resumen.csv, matriz_afinidad.csv, redocking_resumen.csv, interacciones_*.csv, *.xlsx
 ├─ 06_Figuras/  07_Reporte/
 └─ README.md  .gitignore
 ```
