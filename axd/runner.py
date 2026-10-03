@@ -275,7 +275,36 @@ def ver_log(proy):
     else:
         log = e["log"]
     ui.info(f"{os.path.relpath(log, proy)}   {ui.gris('(Ctrl+C para salir del log; el trabajo sigue)')}")
+    # seguimiento propio (tail -f falla en carpetas de Windows /mnt/c con "No data available")
     try:
-        subprocess.call(["tail", "-n", "40", "-f", log])
+        with open(log, errors="replace") as fh:
+            lineas = fh.readlines()
+            sys.stdout.write("".join(lineas[-40:])); sys.stdout.flush()
+            quieto = 0
+            while True:
+                nuevo = fh.read()
+                if nuevo:
+                    sys.stdout.write(nuevo); sys.stdout.flush(); quieto = 0
+                else:
+                    quieto += 1
+                    if quieto >= 4 and not (estado(proy) or {}).get("vivo"):
+                        print(); ui.info("El trabajo terminó.")
+                        return
+                    time.sleep(0.5)
+    except KeyboardInterrupt:
+        print()
+
+
+def avance_vivo(proy, cada=5):
+    """Refresca la pantalla de avance hasta que termine el trabajo o se presione Ctrl+C."""
+    try:
+        while True:
+            print("\033[2J\033[H", end="")
+            mostrar_avance(proy)
+            print(ui.gris(f"\n  Se actualiza cada {cada} s · Ctrl+C para salir (el trabajo sigue)"))
+            e = estado(proy)
+            if not e or not e.get("vivo"):
+                return
+            time.sleep(cada)
     except KeyboardInterrupt:
         print()

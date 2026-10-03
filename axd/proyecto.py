@@ -278,7 +278,12 @@ def _agregar_texto(t, agregar, carpeta, ruta, resolver=True):
     tipo, v = interpretar_pubchem(t)
     cid, titulo = pubchem_resolver(t) if resolver else (None, None)
     if cid:
-        nombre = titulo if (titulo and tipo != "nombre") else (t if tipo == "nombre" else f"{tipo.upper()}_{v}")
+        if tipo == "nombre":
+            nombre = t
+        elif titulo and len(titulo) <= 30 and ";" not in titulo:
+            nombre = titulo
+        else:  # títulos de PubChem muy largos (sales, mezclas): mejor el número
+            nombre = f"CID_{cid}"
         ui.ok(f"{t} → {titulo or 'CID ' + cid} (CID {cid})")
     else:
         nombre = t if tipo == "nombre" else f"{tipo.upper()}_{v}"
@@ -323,7 +328,7 @@ def ligandos_basico(ruta, p, controles=False):
     nuevos = []
 
     def agregar(e):
-        e["id"] = _id_unico(ui.nombre_seguro(e["nombre"]), ids)
+        e["id"] = _id_unico(ui.nombre_seguro(e["nombre"])[:40], ids)
         ids.add(e["id"]); nuevos.append(e)
 
     while True:
@@ -459,7 +464,7 @@ def asistente_ligandos(ruta, p, controles=False):
     nuevos = []
 
     def agregar(e):
-        e["id"] = _id_unico(ui.nombre_seguro(e["nombre"]), ids)
+        e["id"] = _id_unico(ui.nombre_seguro(e["nombre"])[:40], ids)
         ids.add(e["id"]); nuevos.append(e)
 
     while True:

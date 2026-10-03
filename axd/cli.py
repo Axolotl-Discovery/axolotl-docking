@@ -15,7 +15,7 @@ Uso:  Docking                    abre el menú interactivo
       Docking nuevo              asistente para crear un proyecto
       Docking abrir   [carpeta]  ver/editar dianas, ligandos y parámetros
       Docking correr  [carpeta]  correr el pipeline (completo o por pasos)
-      Docking avance  [carpeta]  ver cuántas corridas van
+      Docking avance  [carpeta]  ver cuántas corridas van  (Docking avance --vivo: se actualiza solo)
       Docking log     [carpeta]  ver el log en vivo
       Docking detener [carpeta]  detener el trabajo en segundo plano
       Docking reanudar[carpeta]  retomar donde se quedó (p. ej. tras un corte de luz)
@@ -157,9 +157,13 @@ def despachar(op, arg, interactivo=False):
         r = elegir_proyecto(arg)
         r and menu_correr(r)
     elif op == "avance":
+        vivo = VIVO or (interactivo and ui.si_no("¿Verlo en vivo (se actualiza solo)?", True))
         r = elegir_proyecto(arg, preguntar=interactivo)
-        r and runner.mostrar_avance(r)
-        interactivo and ui.pausa()
+        if r and vivo:
+            runner.avance_vivo(r)
+        elif r:
+            runner.mostrar_avance(r)
+            interactivo and ui.pausa()
     elif op == "log":
         r = elegir_proyecto(arg, preguntar=interactivo)
         r and runner.ver_log(r)
@@ -190,8 +194,15 @@ ALIAS = {"new": "nuevo", "crear": "nuevo", "editar": "abrir", "open": "abrir", "
          "update": "actualizar", "logs": "log"}
 
 
+VIVO = False
+
+
 def main(argv=None):
-    argv = sys.argv[1:] if argv is None else argv
+    global VIVO
+    argv = list(sys.argv[1:] if argv is None else argv)
+    for f in ("--vivo", "-v", "vivo"):
+        if f in argv[1:]:
+            argv.remove(f); VIVO = True
     try:
         if not argv:
             return menu_principal()

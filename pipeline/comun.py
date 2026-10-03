@@ -12,6 +12,12 @@ APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, APP)
 from axd.config import cargar_proyecto, guardar_proyecto  # noqa: E402,F401
 
+try:  # silencia los avisos informativos de RDKit ("tagged as 2D", "More than one matching pattern")
+    from rdkit import RDLogger
+    RDLogger.DisableLog("rdApp.*")
+except ImportError:
+    pass
+
 AD2EL = {"A": "C", "C": "C", "OA": "O", "O": "O", "NA": "N", "N": "N", "NS": "N", "SA": "S", "S": "S",
          "P": "P", "F": "F", "Cl": "Cl", "CL": "Cl", "Br": "Br", "BR": "Br", "I": "I", "HD": "H", "HS": "H",
          "H": "H", "Mg": "Mg", "MG": "Mg", "Zn": "Zn", "ZN": "Zn", "Fe": "Fe", "FE": "Fe", "Ca": "Ca",
