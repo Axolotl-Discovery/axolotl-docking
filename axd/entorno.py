@@ -8,18 +8,16 @@ from . import ui
 
 OPCIONALES = {"PyMOL", "ProLIF", "MDAnalysis", "PLIP", "Vina", "matplotlib", "prepare_ligand"}
 
-CHEQUEO_PY = r"""
-import importlib, sys
-mods = [("rdkit", "RDKit"), ("meeko", "Meeko"), ("openbabel.pybel", "Open Babel"), ("pdbfixer", "PDBFixer"),
-        ("openmm", "OpenMM"), ("gemmi", "gemmi"), ("numpy", "numpy"), ("pandas", "pandas"),
-        ("matplotlib", "matplotlib"), ("pymol", "PyMOL"), ("prolif", "ProLIF"), ("MDAnalysis", "MDAnalysis"),
-        ("plip", "PLIP")]
-for m, n in mods:
-    try:
-        importlib.import_module(m); print("OK", n)
-    except Exception as e:
-        print("XX", n, "-", str(e).splitlines()[0][:70])
-"""
+MODULOS = [("rdkit", "RDKit"), ("meeko", "Meeko"), ("openbabel.pybel", "Open Babel"), ("pdbfixer", "PDBFixer"),
+           ("openmm", "OpenMM"), ("gemmi", "gemmi"), ("numpy", "numpy"), ("pandas", "pandas"),
+           ("openpyxl", "openpyxl"), ("matplotlib", "matplotlib"), ("pymol", "PyMOL"), ("prolif", "ProLIF"),
+           ("MDAnalysis", "MDAnalysis"), ("plip", "PLIP"), ("vina", "Vina")]
+
+# Cada import va en su propio proceso: si una librería crashea (p. ej. el conflicto swig de vina/openbabel)
+# no se lleva entre las patas al resto del chequeo ni da un falso "todo listo".
+CHEQUEO_SH = "\n".join(
+    f'python -c "import {m}" >/dev/null 2>&1 && echo "OK {n}" || echo "XX {n} - no se pudo importar"'
+    for m, n in MODULOS) + "\necho FIN_CHEQUEO\n"
 
 
 def doctor(reparar_preguntando=True):
@@ -34,16 +32,21 @@ def doctor(reparar_preguntando=True):
     envs = C.entornos_conda(conda)
     if conda and g["entorno"] in envs:
         ui.ok(f"entorno conda: {g['entorno']}")
-        bash = (f'source "{conda}/etc/profile.d/conda.sh" && conda activate "{g["entorno"]}" && '
-                f'python - <<"EOF"\n{CHEQUEO_PY}\nEOF\npython -c "from vina import Vina" 2>/dev/null && echo OK Vina || echo XX Vina; '
+        bash = (f'source "{conda}/etc/profile.d/conda.sh" && conda activate "{g["entorno"]}" || exit 3\n'
+                + CHEQUEO_SH +
                 'command -v mk_prepare_ligand.py >/dev/null && echo OK "mk_prepare_ligand.py" || echo XX "mk_prepare_ligand.py"; '
                 'command -v obabel >/dev/null && echo OK obabel || echo XX obabel')
+        ui.info("Probando las librerías del entorno (≈ 20 s)…")
         out = subprocess.run(["bash", "-c", bash], capture_output=True, text=True).stdout
+        if "FIN_CHEQUEO" not in out:
+            ui.error("  el chequeo de librerías no terminó (¿no se pudo activar el entorno?)"); problemas += 1
         for l in out.splitlines():
             if l.startswith("OK "):
                 ui.ok("  " + l[3:])
             elif l.startswith("XX "):
                 nombre = l[3:].split(" - ")[0].strip()
+                if nombre == "Vina":
+                    l = "XX Vina - no se pudo importar"
                 if nombre in OPCIONALES:
                     ui.aviso("  " + l[3:] + ui.gris("  (opcional: el pipeline no lo necesita)"))
                 else:
