@@ -1,4 +1,4 @@
-# 🦎 Axolotl Docking
+#  Axolotl Docking
 
 App de terminal para **docking molecular** de Axolotl Discovery. Se instala con un comando en WSL y se usa escribiendo:
 
