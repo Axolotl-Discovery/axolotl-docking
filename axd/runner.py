@@ -61,8 +61,9 @@ def _script_entorno(g):
     return (
         'source "$AXD_CONDA/etc/profile.d/conda.sh" && conda activate "$AXD_ENV" || '
         '{ echo "✘ No pude activar el entorno conda \'$AXD_ENV\'. Corre: Docking entorno"; exit 3; }; '
-        'export PATH="$AXD_ADFR:$AXD_TOOLS:$PATH"; export PYTHONUNBUFFERED=1; '
-        'exec python "$AXD_APP/pipeline/run.py" "$AXD_PROY" "$@"'
+        # ADFRsuite trae su propio "python" 2.7: va AL FINAL del PATH y se usa el python del entorno por ruta
+        'export PATH="$CONDA_PREFIX/bin:$PATH:$AXD_ADFR:$AXD_TOOLS"; export PYTHONUNBUFFERED=1; '
+        'exec "$CONDA_PREFIX/bin/python" "$AXD_APP/pipeline/run.py" "$AXD_PROY" "$@"'
     )
 
 

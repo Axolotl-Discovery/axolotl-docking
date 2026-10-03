@@ -68,15 +68,18 @@ main() {
   # --- bloque en ~/.bashrc (PATH para el comando, smina y ADFRsuite)
   local RC="$HOME/.bashrc"
   touch "$RC"
-  if ! grep -q ">>> axolotl-docking >>>" "$RC"; then
+  # (se reescribe en cada instalación para corregir versiones viejas del bloque)
+  sed -i '/# >>> axolotl-docking >>>/,/# <<< axolotl-docking <<</d' "$RC"
+  if true; then
     cat >> "$RC" <<'BLOQUE'
 
 # >>> axolotl-docking >>>
-export PATH="$HOME/.local/bin:$HOME/tools/ADFRsuite-1.0/bin:$HOME/tools/bin:$PATH"
+# ADFRsuite y smina van AL FINAL: ADFRsuite trae su propio "python" 2.7 que taparía al de conda
+export PATH="$HOME/.local/bin:$PATH:$HOME/tools/bin:$HOME/tools/ADFRsuite-1.0/bin"
 alias dock='Docking'
 # <<< axolotl-docking <<<
 BLOQUE
-    echo "${V}✔${N} PATH y alias añadidos a ~/.bashrc"
+    echo "${V}✔${N} PATH y alias actualizados en ~/.bashrc"
   fi
   export PATH="$HOME/.local/bin:$PATH"
 

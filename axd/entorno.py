@@ -16,7 +16,7 @@ MODULOS = [("rdkit", "RDKit"), ("meeko", "Meeko"), ("openbabel.pybel", "Open Bab
 # Cada import va en su propio proceso: si una librería crashea (p. ej. el conflicto swig de vina/openbabel)
 # no se lleva entre las patas al resto del chequeo ni da un falso "todo listo".
 CHEQUEO_SH = "\n".join(
-    f'python -c "import {m}" >/dev/null 2>&1 && echo "OK {n}" || echo "XX {n} - no se pudo importar"'
+    f'"$CONDA_PREFIX/bin/python" -c "import {m}" >/dev/null 2>&1 && echo "OK {n}" || echo "XX {n} - no se pudo importar"'
     for m, n in MODULOS) + "\necho FIN_CHEQUEO\n"
 
 
@@ -33,6 +33,7 @@ def doctor(reparar_preguntando=True):
     if conda and g["entorno"] in envs:
         ui.ok(f"entorno conda: {g['entorno']}")
         bash = (f'source "{conda}/etc/profile.d/conda.sh" && conda activate "{g["entorno"]}" || exit 3\n'
+                'export PATH="$CONDA_PREFIX/bin:$PATH"\n'
                 + CHEQUEO_SH +
                 'command -v mk_prepare_ligand.py >/dev/null && echo OK "mk_prepare_ligand.py" || echo XX "mk_prepare_ligand.py"; '
                 'command -v obabel >/dev/null && echo OK obabel || echo XX obabel')

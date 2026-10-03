@@ -48,7 +48,9 @@ SOLVER="conda"; command -v mamba >/dev/null && SOLVER="mamba"
 if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
   ok "el entorno '$ENV_NAME' ya existe: sólo instalo lo que le falte (sin tocar lo demás)"
   conda activate "$ENV_NAME"
-  FALTAN=$(python - <<'PY'
+  PY="$CONDA_PREFIX/bin/python"   # nunca 'python' a secas: ADFRsuite trae un python 2.7
+  [ -x "$PY" ] || { fail "el entorno no tiene python propio"; PY=python; }
+  FALTAN=$("$PY" - <<'PY'
 import importlib, importlib.util
 req = {"rdkit": "rdkit", "meeko": "meeko", "openbabel": "openbabel", "pdbfixer": "pdbfixer", "openmm": "openmm",
        "gemmi": "gemmi", "numpy": "numpy", "pandas": "pandas", "openpyxl": "openpyxl", "scipy": "scipy"}
@@ -59,7 +61,7 @@ PY
     echo "  · Faltan: $FALTAN"
     $SOLVER install -y -n "$ENV_NAME" -c conda-forge $FALTAN || { fail "no pude instalar: $FALTAN"; PROBLEMAS=$((PROBLEMAS+1)); }
   fi
-  command -v mk_prepare_ligand.py >/dev/null || pip install -q meeko
+  command -v mk_prepare_ligand.py >/dev/null || "$PY" -m pip install -q meeko
   conda deactivate
 else
   echo "  · Creando el entorno (10-20 min la primera vez)…"
