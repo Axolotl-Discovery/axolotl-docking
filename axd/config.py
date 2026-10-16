@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 
+from . import layout as L
+
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION = open(os.path.join(APP, "VERSION")).read().strip() if os.path.exists(os.path.join(APP, "VERSION")) else "dev"
 CONF_DIR = os.path.expanduser(os.environ.get("AXD_CONFIG_DIR", "~/.config/axolotl-docking"))
@@ -19,22 +21,9 @@ DEFECTO_GLOBAL = {
     "recientes": [],
 }
 
-CARPETAS = [
-    "01_Receptores/limpios",
-    "02_Ligandos",
-    "03_Controles/ligando_cristal",
-    "04_Docking/Receptores",
-    "04_Docking/Ligandos",
-    "04_Docking/Controles",
-    "04_Docking/Redocking",
-    "04_Docking/Resultados",
-    "04_Docking/MejoresPoses",
-    "04_Docking/Complejos",
-    "04_Docking/logs",
-    "05_Analisis",
-    "06_Figuras",
-    "07_Reporte",
-]
+# Kept as an alias for anything still importing it directly; Layout is the
+# single source of truth for folder names now.
+CARPETAS = L.ALL_FOLDERS
 
 DOCKING_DEFECTO = {
     "motor": "smina",
@@ -111,13 +100,14 @@ def buscar_proyecto(desde=None):
 
 
 def nuevo_proyecto(ruta, nombre, modo="basico"):
-    for sub in CARPETAS:
+    for sub in L.ALL_FOLDERS:
         os.makedirs(os.path.join(ruta, sub), exist_ok=True)
     p = {
         "nombre": nombre,
         "modo": modo,  # "basico" (todo automático) o "avanzado"
         "creado": _dt.date.today().isoformat(),
         "version_axd": VERSION,
+        "layout_version": L.CURRENT_LAYOUT_VERSION,
         "dianas": [],
         "ligandos": [],
         "controles": [],
@@ -135,20 +125,26 @@ def nuevo_proyecto(ruta, nombre, modo="basico"):
             f"# {nombre}\n\n"
             "Proyecto de docking creado con **Axolotl Docking** (`Docking`).\n\n"
             "| Carpeta | Contenido |\n|---|---|\n"
-            "| 01_Receptores | estructuras crudas (PDB/AlphaFold) y `limpios/` |\n"
-            "| 02_Ligandos | ligandos de estudio (SDF) |\n"
-            "| 03_Controles | controles positivos y ligandos cristalográficos |\n"
-            "| 04_Docking | receptores/ligandos PDBQT, `cajas.json`, resultados y logs |\n"
-            "| 05_Analisis | tablas de afinidad |\n| 06_Figuras | figuras |\n| 07_Reporte | reporte |\n")
+            "| 01_Receptors | estructuras crudas (PDB/AlphaFold) y `clean/` |\n"
+            "| 02_Ligands | ligandos de estudio (SDF) |\n"
+            "| 03_Controls | controles positivos y ligandos cristalográficos |\n"
+            "| 04_Docking | receptores/ligandos PDBQT, `boxes.json`, resultados y logs |\n"
+            "| 05_Analysis | tablas de afinidad |\n| 06_Figures | figuras |\n| 07_Report | reporte |\n")
     return p
 
 
 def cargar_proyecto(ruta):
-    p = json.load(open(os.path.join(ruta, ARCHIVO_PROYECTO), encoding="utf-8"))
+    archivo = os.path.join(ruta, ARCHIVO_PROYECTO)
+    p = json.load(open(archivo, encoding="utf-8"))
     p.setdefault("dianas", []); p.setdefault("ligandos", []); p.setdefault("controles", [])
     p.setdefault("nombre", p.get("codigo") or os.path.basename(os.path.abspath(ruta)))
     p.setdefault("modo", "avanzado")  # proyectos creados con versiones anteriores
     d = dict(DOCKING_DEFECTO); d.update(p.get("docking", {})); p["docking"] = d
+
+    cambio, p = L.migrate_in_place(ruta, p)
+    if cambio:
+        L.backup_project_file(archivo)
+        guardar_proyecto(ruta, p)
     return p
 
 

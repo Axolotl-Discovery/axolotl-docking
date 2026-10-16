@@ -11,6 +11,7 @@ import time
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, APP)
 from axd.config import cargar_proyecto, guardar_proyecto  # noqa: E402,F401
+from axd.layout import Layout  # noqa: E402
 
 try:  # silencia los avisos informativos de RDKit ("tagged as 2D", "More than one matching pattern")
     from rdkit import RDLogger
@@ -27,7 +28,8 @@ AD2EL = {"A": "C", "C": "C", "OA": "O", "O": "O", "NA": "N", "N": "N", "NS": "N"
 class Proyecto:
     def __init__(self, raiz):
         self.raiz = os.path.abspath(raiz)
-        self.cfg = cargar_proyecto(self.raiz)
+        self.cfg = cargar_proyecto(self.raiz)     # may migrate the layout as a side effect
+        self.layout = Layout(self.raiz)
 
     def guardar(self):
         guardar_proyecto(self.raiz, self.cfg)
@@ -36,26 +38,26 @@ class Proyecto:
         return os.path.join(self.raiz, *partes)
 
     def rel(self, p):
-        return os.path.relpath(p, self.raiz)
+        return self.layout.rel(p)
 
-    # rutas estándar
+    # rutas estándar — delegadas a Layout (fuente única de verdad)
     def receptor_pdbqt(self, d):
-        return self.r("04_Docking", "Receptores", f"{d['id']}.pdbqt")
+        return self.layout.receptor_pdbqt(d["id"])
 
     def receptor_limpio(self, d):
-        return self.r("01_Receptores", "limpios", f"{d['id']}_clean.pdb")
+        return self.layout.receptor_clean(d["id"])
 
     def ligando_pdbqt(self, lig, control=False):
-        return self.r("04_Docking", "Controles" if control else "Ligandos", f"{lig['id']}.pdbqt")
+        return self.layout.ligand_pdbqt(lig["id"], control)
 
     def ref_sdf(self, d):
-        return self.r("03_Controles", "ligando_cristal", f"{d['id']}_ref_cristal.sdf")
+        return self.layout.ref_sdf(d["id"])
 
     def ref_pdb(self, d):
-        return self.r("03_Controles", "ligando_cristal", f"{d['id']}_ref.pdb")
+        return self.layout.ref_pdb(d["id"])
 
     def cajas(self):
-        f = self.r("04_Docking", "cajas.json")
+        f = self.layout.boxes_json()
         return json.load(open(f)) if os.path.exists(f) else {}
 
     def ligandos_para(self, diana_id):

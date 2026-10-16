@@ -78,7 +78,7 @@ class Motor:
             if raros:
                 log("  ⚛ Hay ligandos con átomos no comunes → TODO el proyecto se dockea con AutoDock4 "
                     "(para que las energías sean comparables)")
-            log(f"  · Parámetros: {P.rel(self.param)} (detalle en 05_Analisis/parametros_metales.txt)")
+            log(f"  · Parámetros: {P.rel(self.param)} (detalle en 05_Analysis/metal_parameters.txt)")
             log("  ⚠ Parámetros genéricos (UFF) para metales: usa las energías de forma comparativa y valida con DM.")
 
     def disponible(self):
@@ -130,7 +130,7 @@ def redocking(P, rehacer=False):
             fallos += 1; continue
         log(f"\n  ▸ {diana['id']} · ligando {diana['caja']['ref']}")
         for s in d["semillas"]:
-            sal = P.r("04_Docking", "Resultados", "Redocking", f"{diana['id']}_cristal_s{s}.pdbqt")
+            sal = P.layout.redocking_result_pdbqt(diana["id"], s)
             e, previa = motor.dockear(diana["id"], P.receptor_pdbqt(diana), lig, cajas[diana["id"]], sal, s, d, rehacer)
             r = None
             if e is not None:
@@ -144,7 +144,7 @@ def redocking(P, rehacer=False):
     if not filas:
         log("  (ninguna diana tiene caja definida por ligando co-cristalizado)")
         return fallos
-    f = P.r("05_Analisis", "redocking_resumen.csv")
+    f = P.layout.redocking_summary_csv()
     with open(f, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["diana", "semilla", "afinidad", "rmsd"]); w.writeheader(); w.writerows(filas)
     log("\n  Criterio de validación: RMSD ≤ 2.0 Å en la pose 1")
@@ -162,9 +162,9 @@ def matriz(P, rehacer=False):
     titulo("5 · Docking (matriz ligandos × dianas)")
     cajas, d = P.cajas(), P.cfg["docking"]
     if rehacer:  # no se borra nada: lo anterior se mueve a un respaldo
-        resp = P.r("04_Docking", "Resultados_respaldo_" + time.strftime("%Y%m%d_%H%M"))
+        resp = P.layout.results_backup_dir(time.strftime("%Y%m%d_%H%M"))
         for diana in P.cfg["dianas"]:
-            src = P.r("04_Docking", "Resultados", diana["id"])
+            src = P.layout.target_results_dir(diana["id"])
             if os.path.isdir(src) and os.listdir(src):
                 os.makedirs(resp, exist_ok=True)
                 shutil.move(src, os.path.join(resp, diana["id"]))
@@ -187,7 +187,7 @@ def matriz(P, rehacer=False):
         return 1
     total = len(trabajo) * len(d["semillas"])
     hechas = sum(1 for (di, _, lig, _, _) in trabajo for s in d["semillas"]
-                 if completo(P.r("04_Docking", "Resultados", di["id"], f"{lig['id']}_s{s}.pdbqt"))) if not rehacer else 0
+                 if completo(P.layout.result_pdbqt(di["id"], lig["id"], s))) if not rehacer else 0
     log(f"  {len(trabajo)} pares ligando–diana × {len(d['semillas'])} semillas = {total} corridas "
         f"({hechas} ya hechas) · {motor.etiqueta(d)}")
     t0, nuevas, fallos, actual = time.time(), 0, 0, None
@@ -198,7 +198,7 @@ def matriz(P, rehacer=False):
             log(f"\n  ▸ {actual}   centro {c['center']}  caja {c['size']}")
         es = []
         for s in d["semillas"]:
-            sal = P.r("04_Docking", "Resultados", diana["id"], f"{lig['id']}_s{s}.pdbqt")
+            sal = P.layout.result_pdbqt(diana["id"], lig["id"], s)
             dd = d
             if P.cfg.get("modo") == "basico" and cajas[diana["id"]].get("modo") == "ciego":
                 dd = dict(d, exhaustiveness=max(int(d["exhaustiveness"]), 64))  # ciego necesita más búsqueda

@@ -195,19 +195,20 @@ def ejecutar(P, rehacer=False):
             shutil.copy(limpio, os.path.join(tmp, "rec.pdb"))
             rc, out = correr([prep, "-r", "rec.pdb", "-o", "rec.pdbqt", "-A", "hydrogens", "-U", "nphs_lps_waters"],
                              cwd=tmp, timeout=1800)
-            open(P.r("04_Docking", "logs", f"prep_receptor_{d['id']}.log"), "w").write(out)
+            open(P.layout.prep_receptor_log(d["id"]), "w").write(out)
             if os.path.exists(os.path.join(tmp, "rec.pdbqt")) and os.path.getsize(os.path.join(tmp, "rec.pdbqt")) > 0:
                 shutil.copy(os.path.join(tmp, "rec.pdbqt"), salida)
                 log(f"    ✔ prepare_receptor → {P.rel(salida)}")
             else:
-                log(f"    ✘ prepare_receptor falló (ver 04_Docking/logs/prep_receptor_{d['id']}.log)"); fallos += 1
+                log(f"    ✘ prepare_receptor falló (ver {P.rel(P.layout.prep_receptor_log(d['id']))})"); fallos += 1
         except Exception as e:  # noqa: BLE001
             log(f"    ✘ error: {e}"); fallos += 1
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    json.dump(cajas, open(P.r("04_Docking", "cajas.json"), "w"), indent=2)
+    json.dump(cajas, open(P.layout.boxes_json(), "w"), indent=2)
     if cambios:
         P.guardar()  # guarda lo que se decidió automáticamente (cadenas, cofactores, caja)
-    log(f"\n  Receptores: {len(P.cfg['dianas']) - fallos}/{len(P.cfg['dianas'])} listos · cajas en 04_Docking/cajas.json")
+    log(f"\n  Receptores: {len(P.cfg['dianas']) - fallos}/{len(P.cfg['dianas'])} listos · "
+        f"cajas en {P.rel(P.layout.boxes_json())}")
     return fallos

@@ -4,7 +4,7 @@ Por qué AutoDock4 y no smina/Vina: Vina/smina sólo conocen un conjunto fijo de
 aceptan V, Pt, Ru, etc. AutoDock4 permite añadir tipos nuevos con una línea `atom_par` en su archivo de
 parámetros (procedimiento documentado por los autores de AutoDock).
 
-Cómo se generan los parámetros de un elemento nuevo (queda escrito en 05_Analisis/parametros_metales.txt):
+Cómo se generan los parámetros de un elemento nuevo (queda escrito en 05_Analysis/metal_parameters.txt):
   · Rii (diámetro de van der Waals) y epsii (pozo de energía) = x1 y D1 del Universal Force Field
     (Rappé et al., J. Am. Chem. Soc. 1992, 114, 10024), leídos del UFF.prm de Open Babel del entorno.
   · vol = volumen de la esfera de diámetro Rii (misma convención que C, N, O en AD4).
@@ -178,9 +178,9 @@ def _base_ad4():
 
 
 def escribir_parametros(P, tipos_extra):
-    """Crea 04_Docking/Mapas/AD4_axd.dat (base AD4.1 + tipos nuevos) y documenta la derivación."""
-    os.makedirs(P.r("04_Docking", "Mapas"), exist_ok=True)
-    destino = P.r("04_Docking", "Mapas", "AD4_axd.dat")
+    """Crea 04_Docking/Maps/AD4_axd.dat (base AD4.1 + tipos nuevos) y documenta la derivación."""
+    os.makedirs(P.layout.maps_dir(), exist_ok=True)
+    destino = P.layout.ad4_params_file()
     base = _base_ad4()
     texto = open(base).read() if base else ""
     extra, doc = [], []
@@ -200,9 +200,9 @@ def escribir_parametros(P, tipos_extra):
         fh.write(texto.rstrip() + "\n")
         if extra:
             fh.write("# --- tipos añadidos por Axolotl Docking (UFF: Rappé et al. 1992) ---\n" + "\n".join(extra) + "\n")
-    open(P.r("05_Analisis", "parametros_metales.txt"), "w").write(
+    open(P.layout.metal_parameters_txt(), "w").write(
         "Parámetros AutoDock4 para átomos no estándar (Axolotl Docking)\n"
-        f"Archivo usado: 04_Docking/Mapas/AD4_axd.dat  (base: {base or 'parámetros internos de AutoDock4'})\n\n"
+        f"Archivo usado: 04_Docking/Maps/AD4_axd.dat  (base: {base or 'parámetros internos de AutoDock4'})\n\n"
         + ("\n".join(doc) if doc else "  (no hizo falta añadir tipos)") + "\n\n"
         "Rii y epsii = x1 y D1 del Universal Force Field (Rappé et al., JACS 1992, 114, 10024);\n"
         "vol = esfera de diámetro Rii; solpar y ausencia de puentes de H como los metales de AD4.\n"
@@ -220,8 +220,8 @@ def _npts(size, spacing=0.375):
 
 def preparar_mapas(P, diana_id, receptor, caja, tipos_lig, param):
     """Corre autogrid4 una vez por diana (con todos los tipos de ligando del proyecto)."""
-    carpeta = P.r("04_Docking", "Mapas", diana_id)
-    marca = os.path.join(carpeta, "tipos.txt")
+    carpeta = P.layout.target_maps_dir(diana_id)
+    marca = os.path.join(carpeta, "types.txt")
     clave = " ".join(sorted(tipos_lig)) + f" | {caja['center']} {caja['size']}"
     if os.path.exists(marca) and open(marca).read() == clave:
         return carpeta

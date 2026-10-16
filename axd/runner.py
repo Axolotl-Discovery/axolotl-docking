@@ -9,6 +9,7 @@ import time
 
 from . import config as C
 from . import ui
+from .layout import Layout
 
 PASOS = ["descargar", "receptores", "ligandos", "redocking", "docking", "resumen", "interacciones"]
 DESCRIPCION_PASOS = {
@@ -23,13 +24,13 @@ DESCRIPCION_PASOS = {
 
 
 def _logs(proy):
-    d = os.path.join(proy, "04_Docking", "logs")
+    d = Layout(proy).logs_dir()
     os.makedirs(d, exist_ok=True)
     return d
 
 
 def _estado_file(proy):
-    return os.path.join(_logs(proy), "trabajo.json")
+    return Layout(proy).job_state_file()
 
 
 def estado(proy):
@@ -94,7 +95,8 @@ def ejecutar(proy, pasos, fondo=True, extra=None):
         return
     args = list(pasos) + (extra or [])
     sello = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log = os.path.join(_logs(proy), f"pipeline_{sello}.log")
+    os.makedirs(_logs(proy), exist_ok=True)
+    log = Layout(proy).pipeline_log(sello)
     cmd = ["bash", "-c", _script_entorno(None), "axd"] + args
     if fondo:
         with open(log, "w") as fh:
@@ -170,7 +172,7 @@ def reanudar(proy):
         return
     # limpia escrituras a medias de un corte de luz o de un 'detener'
     n = 0
-    for raiz, _, archivos in os.walk(os.path.join(proy, "04_Docking", "Resultados")):
+    for raiz, _, archivos in os.walk(Layout(proy).results_dir()):
         for a in archivos:
             if a.endswith(".part"):
                 os.remove(os.path.join(raiz, a)); n += 1
@@ -221,14 +223,14 @@ def mostrar_avance(proy):
     if not tabla:
         ui.aviso("El proyecto aún no tiene dianas configuradas.")
         return
-    res = os.path.join(proy, "04_Docking", "Resultados")
+    lay = Layout(proy)
     total = hechas = 0
     ultimo = None
     print()
     for d, corr in tabla.items():
         n = 0
         for lig, s in corr:
-            f = os.path.join(res, d, f"{lig}_s{s}.pdbqt")
+            f = lay.result_pdbqt(d, lig, s)
             if _completo(f):
                 n += 1
                 m = os.path.getmtime(f)
@@ -245,8 +247,8 @@ def mostrar_avance(proy):
         try:
             t0 = time.mktime(time.strptime(e["inicio"], "%Y%m%d_%H%M%S"))
             hechas_ahora = sum(1 for d, corr in tabla.items() for lig, s in corr
-                               if _completo(os.path.join(res, d, f"{lig}_s{s}.pdbqt"))
-                               and os.path.getmtime(os.path.join(res, d, f"{lig}_s{s}.pdbqt")) >= t0)
+                               if _completo(lay.result_pdbqt(d, lig, s))
+                               and os.path.getmtime(lay.result_pdbqt(d, lig, s)) >= t0)
             if hechas_ahora:
                 seg = (time.time() - t0) / hechas_ahora * (total - hechas)
                 print(f"   Tiempo restante estimado: ~{seg / 3600:.1f} h" if seg > 3600 else

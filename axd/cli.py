@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from axd import config as C  # noqa: E402
-from axd import entorno, hardware_report, proyecto, resultados, runner, ui  # noqa: E402
+from axd import entorno, hardware_report, layout, proyecto, resultados, runner, ui  # noqa: E402
 
 AYUDA = f"""
 {ui.negrita('Docking')} — Axolotl Discovery  (v{C.VERSION})
@@ -101,9 +101,10 @@ def menu_correr(proy):
     if not pasos:
         return
     extra = []
+    lay = layout.Layout(proy)
     if "docking" in pasos and any(
-            os.path.exists(os.path.join(proy, "04_Docking", "Resultados", d["id"])) and
-            os.listdir(os.path.join(proy, "04_Docking", "Resultados", d["id"])) for d in p["dianas"]):
+            os.path.exists(lay.target_results_dir(d["id"])) and
+            os.listdir(lay.target_results_dir(d["id"])) for d in p["dianas"]):
         if ui.si_no("Hay resultados previos. ¿Rehacer TODO desde cero? (No = sólo lo que falta)", False):
             extra.append("--rehacer")
     largo = "docking" in pasos or "redocking" in pasos

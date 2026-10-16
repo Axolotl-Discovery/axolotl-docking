@@ -177,7 +177,7 @@ def ejecutar(P, rehacer=False):
 def preparar_ref_redocking(P, d):
     """Ligando cristalográfico → PDBQT para redocking. Devuelve (pdbqt, mol_ref_sin_H) o (None, None)."""
     from rdkit import Chem
-    salida = P.r("04_Docking", "Redocking", f"{d['id']}_cristal.pdbqt")
+    salida = P.layout.redocking_ligand_pdbqt(d["id"])
     ref = None
     if not os.path.exists(P.ref_sdf(d)) and d.get("pdb") and d.get("caja", {}).get("ref"):
         # (modo básico: el ligando se eligió después de 'descargar') — SDF con órdenes de enlace de RCSB
@@ -209,5 +209,5 @@ def preparar_ref_redocking(P, d):
         return None, None
     ref_noH = Chem.RemoveHs(ref)
     if not (os.path.exists(salida) and os.path.getsize(salida) > 0):
-        a_pdbqt(Chem.AddHs(ref_noH, addCoords=True), salida, f"{d['id']}_cristal")
+        a_pdbqt(Chem.AddHs(ref_noH, addCoords=True), salida, f"{d['id']}_crystal")
     return salida, ref_noH

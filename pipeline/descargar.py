@@ -61,7 +61,7 @@ def _pubchem(consulta, destino_base):
 def ejecutar(P, rehacer=False):
     titulo("1 · Descargas")
     fallos = 0
-    crudos = P.r("01_Receptores")
+    crudos = P.layout.receptors_raw_dir()
     for d in P.cfg["dianas"]:
         actual = P.r(d["archivo"]) if d.get("archivo") else None
         if actual and os.path.exists(actual) and (not rehacer or d["fuente"] == "archivo"):
@@ -111,12 +111,12 @@ def ejecutar(P, rehacer=False):
             else:
                 log(f"    · sin SDF del ligando {caja['ref']}; para redocking se usará el PDB (Open Babel)")
 
-    for clave, carpeta in (("ligandos", "02_Ligandos"), ("controles", "03_Controles")):
+    for clave, carpeta in (("ligandos", P.layout.ligands_dir()), ("controles", P.layout.controls_dir())):
         for l in P.cfg[clave]:
             if l["fuente"] == "ccd":
                 if l.get("archivo") and os.path.exists(P.r(l["archivo"])):
                     log(f"  = {l['id']}: {l['archivo']}"); continue
-                dest = P.r(carpeta, l["id"] + ".sdf")
+                dest = os.path.join(carpeta, l["id"] + ".sdf")
                 for suf, desc in (("ideal", "coordenadas ideales"), ("model", "coordenadas de un cristal")):
                     try:
                         _bajar(f"https://files.rcsb.org/ligands/download/{l['codigo']}_{suf}.sdf", dest, intentos=2)
@@ -134,7 +134,7 @@ def ejecutar(P, rehacer=False):
                 log(f"  = {l['id']}: {l['archivo']}")
                 continue
             try:
-                ruta, tipo = _pubchem(str(l.get("cid") or l["consulta"]), P.r(carpeta, l["id"]))
+                ruta, tipo = _pubchem(str(l.get("cid") or l["consulta"]), os.path.join(carpeta, l["id"]))
                 l["archivo"] = P.rel(ruta)
                 log(f"  ✔ {l['id']}: PubChem '{l['consulta']}' {tipo}")
             except IOError as e:

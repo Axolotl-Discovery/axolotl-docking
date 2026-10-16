@@ -1,10 +1,10 @@
 """Paso 'interacciones': complejo proteína + ligando (mejor pose) en un solo archivo y análisis de contactos.
 
 Salidas:
-  04_Docking/Complejos/<diana>__<ligando>_complejo.pdb   receptor limpio + mejor pose (con hidrógenos y enlaces)
-  04_Docking/Complejos/<diana>__<ligando>_pose.sdf       la pose sola, con órdenes de enlace (para PyMOL/Chimera/Maestro)
-  05_Analisis/interacciones_detalle.csv          una fila por interacción (tipo, residuo, distancia)
-  05_Analisis/interacciones_resumen.csv          conteo por tipo y residuos clave por complejo
+  04_Docking/Complexes/<diana>__<ligando>_complex.pdb    receptor limpio + mejor pose (con hidrógenos y enlaces)
+  04_Docking/Complexes/<diana>__<ligando>_pose.sdf       la pose sola, con órdenes de enlace (para PyMOL/Chimera/Maestro)
+  05_Analysis/interactions_detail.csv            una fila por interacción (tipo, residuo, distancia)
+  05_Analysis/interactions_summary.csv           conteo por tipo y residuos clave por complejo
 Usa PLIP (puentes H, hidrofóbicas, apilamiento π, catión-π, puentes salinos, halógeno, puentes de agua, metal).
 Si PLIP no está o falla, usa criterios geométricos por distancia.
 """
@@ -68,14 +68,14 @@ def construir_complejo(P, diana, lig_id, pose_pdbqt, control):
     rec = P.receptor_limpio(diana)
     if not os.path.exists(rec):
         return None, None
-    carpeta = "Controles" if control else "Ligandos"
-    plantilla = P.r("04_Docking", carpeta, "prep", f"{lig_id}_H.sdf")
+    plantilla = P.layout.ligand_prep_sdf(lig_id, control)
     mol, con_enlaces = _pose_rdkit(pose_pdbqt, plantilla)
-    os.makedirs(P.r("04_Docking", "Complejos"), exist_ok=True)
-    base = P.r("04_Docking", "Complejos", f"{diana['id']}__{lig_id}")
+    os.makedirs(P.layout.complexes_dir(), exist_ok=True)
+    pose_sdf = P.layout.complex_pose_sdf(diana["id"], lig_id)
+    complex_pdb = P.layout.complex_pdb(diana["id"], lig_id)
     from rdkit import Chem
     try:
-        w = Chem.SDWriter(base + "_pose.sdf"); mol.SetProp("_Name", lig_id); w.write(mol); w.close()
+        w = Chem.SDWriter(pose_sdf); mol.SetProp("_Name", lig_id); w.write(mol); w.close()
     except Exception:  # noqa: BLE001
         pass
     receptor = [l for l in open(rec) if l[:6] in ("ATOM  ", "HETATM", "TER   ")]
@@ -90,8 +90,8 @@ def construir_complejo(P, diana, lig_id, pose_pdbqt, control):
             nums = [int(l[i:i + 5]) + n0 for i in range(6, len(l.rstrip()), 5) if l[i:i + 5].strip()]
             lineas.append("CONECT" + "".join(f"{x:5d}" for x in nums))
     cab = [f"REMARK   Complejo {diana['id']} + {lig_id} (mejor pose, Axolotl Docking)\n"]
-    open(base + "_complejo.pdb", "w").writelines(cab + receptor + ["TER\n"] + [x + "\n" for x in lineas] + ["END\n"])
-    return base + "_complejo.pdb", con_enlaces
+    open(complex_pdb, "w").writelines(cab + receptor + ["TER\n"] + [x + "\n" for x in lineas] + ["END\n"])
+    return complex_pdb, con_enlaces
 
 
 # ---------------------------------------------------------------- PLIP
@@ -197,7 +197,7 @@ def ejecutar(P, rehacer=False):
     else:
         motor = "geométrico"
         log("  · PLIP no está instalado: uso criterios geométricos por distancia")
-    poses = sorted(glob.glob(P.r("04_Docking", "MejoresPoses", "*__*.pdbqt")))
+    poses = sorted(glob.glob(os.path.join(P.layout.best_poses_dir(), "*__*.pdbqt")))
     if not poses:
         log("  Aún no hay mejores poses (corre 'docking' y 'resumen').")
         return 0
@@ -232,25 +232,25 @@ def ejecutar(P, rehacer=False):
         except Exception as e:  # noqa: BLE001
             log(f"  ✘ {did} + {lid}: {e}"); fallos += 1
     campos = ["diana", "ligando", "tipo", "residuo", "cadena", "distancia", "detalle", "metodo"]
-    with open(P.r("05_Analisis", "interacciones_detalle.csv"), "w", newline="") as fh:
+    with open(P.layout.interactions_detail_csv(), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=campos); w.writeheader()
         for f in sorted(detalle, key=lambda x: (x["diana"], x["ligando"], x["tipo"], x["distancia"])):
             w.writerow({k: (TIPOS_ES.get(f[k], f[k]) if k == "tipo" else f[k]) for k in campos})
     if resumen:
-        with open(P.r("05_Analisis", "interacciones_resumen.csv"), "w", newline="") as fh:
+        with open(P.layout.interactions_summary_csv(), "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(resumen[0])); w.writeheader(); w.writerows(resumen)
     # añade hojas al Excel si existe
     try:
         import pandas as pd
-        xl = glob.glob(P.r("05_Analisis", "*_afinidades.xlsx"))
+        xl = glob.glob(P.layout.affinities_xlsx_glob())
         if xl and resumen:
             with pd.ExcelWriter(xl[0], mode="a", if_sheet_exists="replace") as xw:
                 pd.DataFrame(resumen).to_excel(xw, sheet_name="Interacciones", index=False)
-                pd.read_csv(P.r("05_Analisis", "interacciones_detalle.csv")).to_excel(
+                pd.read_csv(P.layout.interactions_detail_csv()).to_excel(
                     xw, sheet_name="Interacciones_detalle", index=False)
     except Exception:  # noqa: BLE001
         pass
-    log(f"\n  Complejos en 04_Docking/Complejos/ · tablas en 05_Analisis/interacciones_*.csv · método: {motor}")
+    log(f"\n  Complejos en 04_Docking/Complexes/ · tablas en 05_Analysis/interactions_*.csv · método: {motor}")
     return fallos
 
 

@@ -11,6 +11,7 @@ from collections import OrderedDict
 from . import config as C
 from . import runner
 from . import ui
+from .layout import Layout
 
 EXT_LIGANDO = (".sdf", ".mol", ".mol2", ".pdb", ".smi", ".smiles", ".pdbqt")
 AGUAS = {"HOH", "WAT", "DOD", "H2O"}
@@ -192,7 +193,7 @@ def pregunta_atomos_raros(ruta, p, avanzado=False):
     ui.titulo("Átomos no comunes")
     ui.info("smina/Vina no tienen parámetros para esos átomos, así que el proyecto se dockeará con AutoDock4:")
     ui.info("  · parámetros del metal derivados del Universal Force Field (UFF), escritos y documentados")
-    ui.info("    en 05_Analisis/parametros_metales.txt para tu sección de métodos;")
+    ui.info("    en 05_Analysis/metal_parameters.txt para tu sección de métodos;")
     ui.info("  · cargas parciales EEM conservando la carga total; clusters (oxovanadatos) como cuerpo rígido;")
     ui.info("  · TODO el proyecto (incluidos controles) usa AutoDock4 para que las energías sean comparables.")
     ui.aviso("Son parámetros genéricos: compara energías entre sí y valida con dinámica molecular.")
@@ -228,7 +229,7 @@ def dianas_basico(ruta, p):
     ui.titulo("Proteínas (dianas)")
     ui.info("Escribe un PDB ID (p. ej. 1M17), un ID de UniProt (se baja de AlphaFold) o la ruta a un .pdb/.cif.")
     ui.info("Una por línea; Enter vacío para terminar.")
-    crudos = os.path.join(ruta, "01_Receptores")
+    crudos = Layout(ruta).receptors_raw_dir()
     while True:
         ui._modo_rutas(True)
         try:
@@ -248,7 +249,7 @@ def dianas_basico(ruta, p):
             if os.path.abspath(ruta_local) != os.path.abspath(arch):
                 shutil.copy(ruta_local, arch)
             d.update(fuente="archivo", nombre=nombre, archivo=os.path.relpath(arch, ruta))
-            ui.ok(f"Archivo copiado: 01_Receptores/{os.path.basename(arch)}")
+            ui.ok(f"Archivo copiado: 01_Receptors/{os.path.basename(arch)}")
         elif re.fullmatch(r"[0-9][A-Za-z0-9]{3}", t.strip()):
             pdb = t.strip().upper()
             d.update(fuente="pdb", pdb=pdb, nombre=pdb)
@@ -353,7 +354,7 @@ def _importar_rutas(ruta_local, agregar, carpeta, ruta):
 
 def ligandos_basico(ruta, p, controles=False):
     clave = "controles" if controles else "ligandos"
-    carpeta = os.path.join(ruta, "03_Controles" if controles else "02_Ligandos")
+    carpeta = Layout(ruta).controls_dir() if controles else Layout(ruta).ligands_dir()
     ui.titulo("Controles positivos" if controles else "Ligandos")
     ui.info("Escribe uno por línea: nombre (quercetin), CID (5280343), SID (SID 482105756), 'Nombre SMILES',")
     ui.info("o la ruta a un archivo/carpeta con estructuras. Enter vacío para terminar.")
@@ -396,7 +397,7 @@ def asistente_diana(ruta, p):
     ], defecto=1, salir="Cancelar")
     if not fuente:
         return
-    crudos = os.path.join(ruta, "01_Receptores")
+    crudos = Layout(ruta).receptors_raw_dir()
     d = {"fuente": fuente}
     if fuente == "pdb":
         pdb = ui.preguntar("PDB ID", obligatorio=True,
@@ -431,7 +432,7 @@ def asistente_diana(ruta, p):
         arch = os.path.join(crudos, ui.nombre_seguro(nombre) + ext)
         if os.path.abspath(src) != os.path.abspath(arch):
             shutil.copy(src, arch)
-        ui.ok(f"Copiado a 01_Receptores/{os.path.basename(arch)}")
+        ui.ok(f"Copiado a 01_Receptors/{os.path.basename(arch)}")
         d.update(nombre=nombre, archivo=os.path.relpath(arch, ruta))
 
     cadenas, het = _mostrar_estructura(arch) if arch else ({}, [])
@@ -491,7 +492,7 @@ def _parece_smiles(t):
 
 def asistente_ligandos(ruta, p, controles=False):
     clave = "controles" if controles else "ligandos"
-    carpeta = os.path.join(ruta, "03_Controles" if controles else "02_Ligandos")
+    carpeta = Layout(ruta).controls_dir() if controles else Layout(ruta).ligands_dir()
     etiqueta = "controles positivos" if controles else "ligandos"
     ids = {x["id"] for x in p["ligandos"] + p["controles"]}
     nuevos = []

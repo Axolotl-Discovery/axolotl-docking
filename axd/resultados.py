@@ -9,6 +9,7 @@ import unicodedata
 from . import config as C
 from . import runner
 from . import ui
+from .layout import Layout
 
 
 def _ancho(t):
@@ -49,7 +50,7 @@ def _num(x, nd=2):
 
 # ---------------------------------------------------------------- vistas
 def ver_afinidades(proy):
-    filas = _leer(os.path.join(proy, "05_Analisis", "afinidades_resumen.csv"))
+    filas = _leer(Layout(proy).affinities_summary_csv())
     if not filas:
         ui.aviso("Aún no hay tabla de afinidades. Corre el pipeline (o el paso 'resumen').")
         return
@@ -72,7 +73,7 @@ def ver_afinidades(proy):
 
 
 def ver_matriz(proy):
-    filas = _leer(os.path.join(proy, "05_Analisis", "matriz_afinidad.csv"))
+    filas = _leer(Layout(proy).affinity_matrix_csv())
     if not filas:
         ui.aviso("Aún no hay matriz de afinidades.")
         return
@@ -83,7 +84,7 @@ def ver_matriz(proy):
 
 
 def ver_redocking(proy):
-    filas = _leer(os.path.join(proy, "05_Analisis", "redocking_resumen.csv"))
+    filas = _leer(Layout(proy).redocking_summary_csv())
     if not filas:
         ui.aviso("No hay redocking (sólo se hace cuando la caja viene de un ligando co-cristalizado).")
         return
@@ -95,8 +96,8 @@ def ver_redocking(proy):
 
 
 def ver_interacciones(proy):
-    res = _leer(os.path.join(proy, "05_Analisis", "interacciones_resumen.csv"))
-    det = _leer(os.path.join(proy, "05_Analisis", "interacciones_detalle.csv"))
+    res = _leer(Layout(proy).interactions_summary_csv())
+    det = _leer(Layout(proy).interactions_detail_csv())
     if not res:
         ui.aviso("Aún no hay análisis de interacciones → opción 'Analizar interacciones ahora'.")
         return
@@ -160,11 +161,11 @@ def abrir_pymol(ruta):
 
 def abrir_complejo(proy, ruta=None):
     if not ruta:
-        comps = sorted(glob.glob(os.path.join(proy, "04_Docking", "Complejos", "*_complejo.pdb")))
+        comps = sorted(glob.glob(os.path.join(Layout(proy).complexes_dir(), "*_complex.pdb")))
         if not comps:
             ui.aviso("No hay complejos todavía → opción 'Analizar interacciones ahora'.")
             return
-        k = ui.menu("¿Qué complejo?", [(c, os.path.basename(c)[:-13].replace("__", " + ")) for c in comps])
+        k = ui.menu("¿Qué complejo?", [(c, os.path.basename(c)[:-12].replace("__", " + ")) for c in comps])
         if not k:
             return
         ruta = k
@@ -182,7 +183,7 @@ def abrir_complejo(proy, ruta=None):
 def menu_resultados(proy):
     while True:
         p = C.cargar_proyecto(proy)
-        hay = os.path.exists(os.path.join(proy, "05_Analisis", "afinidades_resumen.csv"))
+        hay = os.path.exists(Layout(proy).affinities_summary_csv())
         op = ui.menu(f"Resultados · {p['nombre']}", [
             ("afin", "Tabla de afinidades"),
             ("matriz", "Matriz ligando × diana"),
@@ -208,7 +209,7 @@ def menu_resultados(proy):
         elif op == "complejo":
             abrir_complejo(proy)
         elif op == "excel":
-            xl = sorted(glob.glob(os.path.join(proy, "05_Analisis", "*_afinidades.xlsx")))
+            xl = sorted(glob.glob(Layout(proy).affinities_xlsx_glob()))
             if xl:
                 abrir_en_windows(xl[0])
             else:
