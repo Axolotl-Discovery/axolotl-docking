@@ -5,6 +5,7 @@ import os
 import subprocess
 
 from . import layout as L
+from . import domain as D
 
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION = open(os.path.join(APP, "VERSION")).read().strip() if os.path.exists(os.path.join(APP, "VERSION")) else "dev"
@@ -152,3 +153,16 @@ def guardar_proyecto(ruta, p):
     f = os.path.join(ruta, ARCHIVO_PROYECTO)
     json.dump(p, open(f + ".tmp", "w", encoding="utf-8"), indent=2, ensure_ascii=False)
     os.replace(f + ".tmp", f)
+
+
+# ---------------------------------------------------------------- modelo de dominio tipado
+def cargar_proyecto_tipado(ruta) -> D.Proyecto:
+    """Como cargar_proyecto(), pero devuelve el modelo tipado (axd.domain.Proyecto) en vez
+    del dict suelto. Pensado para código nuevo (fases 3+); el código existente sigue usando
+    cargar_proyecto() sin cambios."""
+    return D.Proyecto.from_dict(cargar_proyecto(ruta))
+
+
+def guardar_proyecto_tipado(ruta, p: D.Proyecto):
+    """Inverso de cargar_proyecto_tipado(): serializa el modelo tipado de vuelta a axd.json."""
+    guardar_proyecto(ruta, p.to_dict())
