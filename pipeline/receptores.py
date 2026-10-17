@@ -12,6 +12,7 @@ import shutil
 import numpy as np
 
 from comun import correr, en_tmp, herramienta, log, titulo
+from axd.domain.cajas import Caja, CajaLigando, ContextoCaja
 
 MODIFICADOS = {"MSE", "TPO", "SEP", "PTR", "CSO", "HYP", "MLY", "KCX", "CME", "OCS", "CSD", "LLP", "M3L", "SCY"}
 
@@ -156,35 +157,15 @@ def ejecutar(P, rehacer=False):
 
             # ---- caja
             modo = caja_cfg.get("modo", "ciego")
-            if modo == "ligando":
-                if not ref:
-                    log(f"    ✘ no encontré el ligando de referencia {caja_cfg['ref']} en la estructura"); fallos += 1; continue
+            caja_obj = Caja.crear(caja_cfg)
+            if isinstance(caja_obj, CajaLigando) and ref:
                 open(P.ref_pdb(d), "w").writelines([l.replace("ATOM  ", "HETATM") for l in ref] + ["END\n"])
-                c, s = _caja(_xyz(ref), caja_cfg.get("margen", 10), caja_cfg.get("minimo", 22))
-                det = f"ligando {caja_cfg['ref']} ({len(_xyz(ref))} átomos pesados)"
-            elif modo == "residuos":
-                quiero = []
-                for tok in str(caja_cfg["residuos"]).replace(";", ",").split(","):
-                    tok = tok.strip()
-                    if not tok:
-                        continue
-                    ch, num = (tok.split(":") if ":" in tok else (None, tok))
-                    num = "".join(x for x in num if x.isdigit() or x == "-")
-                    quiero.append((ch.strip().upper() if ch else None, int(num)))
-                sel = [l for l in cuerpo if l[:4] == "ATOM" and any(
-                    int(l[22:26]) == n and (ch is None or l[21] == ch) for ch, n in quiero)]
-                if not sel:
-                    log(f"    ✘ ninguno de los residuos {caja_cfg['residuos']} existe en el receptor limpio"); fallos += 1; continue
-                c, s = _caja(_xyz(sel), caja_cfg.get("margen", 8), caja_cfg.get("minimo", 20))
-                det = f"{len(quiero)} residuos ({len(sel)} átomos)"
-            elif modo == "manual":
-                c, s = caja_cfg["center"], caja_cfg["size"]
-                det = "manual"
-            else:
-                c, s = _caja(_xyz(cuerpo + cof), caja_cfg.get("margen", 10))
-                det = "ciego (proteína completa)"
-                if max(s) > 126:
-                    log("    ⚠ la caja es muy grande (> 126 Å); considera docking por sitio")
+            resultado = caja_obj.calcular(ContextoCaja(cuerpo=cuerpo, cof=cof, ref=ref, caja_fn=_caja, xyz_fn=_xyz))
+            if not resultado.ok:
+                log(f"    ✘ {resultado.error}"); fallos += 1; continue
+            if resultado.aviso:
+                log(f"    ⚠ {resultado.aviso}")
+            c, s, det = resultado.center, resultado.size, resultado.detalle
             cajas[d["id"]] = dict(center=c, size=s, modo=modo, detalle=det)
             log(f"    caja: centro {c}  tamaño {s} Å  [{det}]")
 
