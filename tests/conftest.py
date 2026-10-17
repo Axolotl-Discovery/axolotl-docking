@@ -29,8 +29,8 @@ class FakeNet:
         self.llamadas = []
         self.fallos = set()
 
-    def bajar(self, url, dest, intentos=1, timeout=None):
-        self.llamadas.append(("bajar", url, dest))
+    def download(self, url, dest, timeout=None, attempts=1):
+        self.llamadas.append(("download", url, dest))
         if url in self.fallos:
             raise IOError(f"no se pudo descargar {url}")
         os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)

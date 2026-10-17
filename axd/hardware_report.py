@@ -36,10 +36,10 @@ def _save_cache(hw: H.Hardware, pol: tuning.ThermalPolicy) -> None:
 
 def _seed_thermal_config(pol: tuning.ThermalPolicy) -> None:
     """Write the thermal defaults into config.json if the block is missing."""
-    g = C.cargar_global()
+    g = C.load_global()
     if "thermal" not in g:
         g["thermal"] = pol.to_config()
-        C.guardar_global(g)
+        C.save_global(g)
 
 
 def cache_is_present() -> bool:
@@ -55,7 +55,7 @@ def report(redetect: bool = False) -> H.Hardware:
     ui.titulo("Hardware y optimización")
     hw = H.detect()
 
-    g = C.cargar_global()
+    g = C.load_global()
     pol = tuning.ThermalPolicy.from_config(g.get("thermal"))
 
     # --- machine

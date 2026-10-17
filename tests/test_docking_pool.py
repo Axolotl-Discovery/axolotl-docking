@@ -1,4 +1,4 @@
-"""Fase 6: pool real de corridas en pipeline/docking.py (matriz/redocking + ThermalGuard).
+"""Fase 6: pool real de corridas en pipeline/docking.py (matrix/redocking + ThermalGuard).
 
 No depende de smina/AutoDock4/RDKit reales: Motor, _plan_recursos y rmsd_simetrico se
 sustituyen por dobles deterministas; sólo se prueba la orquestación (concurrencia,
@@ -73,25 +73,25 @@ class FakeLayout:
 
 
 class FakeP:
-    def __init__(self, raiz, dianas, ligandos, controles, docking_cfg, cajas, modo="avanzado"):
-        self.cfg = {"dianas": dianas, "ligandos": ligandos, "controles": controles,
-                    "docking": docking_cfg, "modo": modo}
+    def __init__(self, raiz, targets, ligands, controls, docking_cfg, cajas, mode="advanced"):
+        self.cfg = {"targets": targets, "ligands": ligands, "controls": controls,
+                    "docking": docking_cfg, "mode": mode}
         self._cajas = cajas
         self.layout = FakeLayout(str(raiz))
         os.makedirs(self.layout.raiz, exist_ok=True)
 
-    def cajas(self):
+    def boxes(self):
         return self._cajas
 
     def receptor_pdbqt(self, d):
         return os.path.join(self.layout.raiz, f"rec_{d['id']}.pdbqt")
 
-    def ligando_pdbqt(self, lig, ctrl=False):
+    def ligand_pdbqt(self, lig, ctrl=False):
         return os.path.join(self.layout.raiz, f"lig_{lig['id']}.pdbqt")
 
-    def ligandos_para(self, diana_id):
-        out = [(l, False) for l in self.cfg["ligandos"]]
-        out += [(c, True) for c in self.cfg["controles"] if not c.get("diana") or c.get("diana") == diana_id]
+    def ligands_for(self, diana_id):
+        out = [(l, False) for l in self.cfg["ligands"]]
+        out += [(c, True) for c in self.cfg["controls"] if not c.get("target") or c.get("target") == diana_id]
         return out
 
     def rel(self, p):
@@ -99,10 +99,10 @@ class FakeP:
 
 
 def _preparar_archivos(P):
-    for d in P.cfg["dianas"]:
+    for d in P.cfg["targets"]:
         open(P.receptor_pdbqt(d), "w").write("REC")
-    for l in P.cfg["ligandos"] + P.cfg["controles"]:
-        open(P.ligando_pdbqt(l), "w").write("LIG")
+    for l in P.cfg["ligands"] + P.cfg["controls"]:
+        open(P.ligand_pdbqt(l), "w").write("LIG")
 
 
 @pytest.fixture
@@ -202,14 +202,14 @@ def test_pool_registra_error_inesperado_sin_tumbar_el_resto():
     assert resultados[1] == (2.0, False)
 
 
-# ---------------------------------------------------------------- matriz()
+# ---------------------------------------------------------------- matrix()
 def test_matriz_paraleliza_y_reproduce_conteos(tmp_path, tracker, monkeypatch):
     dianas = [{"id": "d1"}, {"id": "d2"}]
     ligandos = [{"id": "LIGA"}, {"id": "LIGX"}]
     controles = [{"id": "CTRL1"}]
     cajas = {"d1": {"center": [0, 0, 0], "size": [20, 20, 20]},
              "d2": {"center": [1, 1, 1], "size": [20, 20, 20]}}
-    docking_cfg = {"semillas": [1, 2, 3], "exhaustiveness": 8, "cpu": 0}
+    docking_cfg = {"seeds": [1, 2, 3], "exhaustiveness": 8, "cpu": 0}
     P = FakeP(tmp_path, dianas, ligandos, controles, docking_cfg, cajas)
     _preparar_archivos(P)
 
@@ -224,10 +224,10 @@ def test_matriz_paraleliza_y_reproduce_conteos(tmp_path, tracker, monkeypatch):
 
     buf = io.StringIO()
     with redirect_stdout(buf):
-        fallos = docking.matriz(P)
+        fallos = docking.matrix(P)
     salida = buf.getvalue()
 
-    total_esperado = len(dianas) * (len(ligandos) + len(controles)) * len(docking_cfg["semillas"])  # 18
+    total_esperado = len(dianas) * (len(ligandos) + len(controles)) * len(docking_cfg["seeds"])  # 18
     assert len(tracker.llamadas) == total_esperado
     assert len(set(tracker.llamadas)) == total_esperado, "alguna corrida se repitió o faltó"
     assert tracker.max_visto <= rp.max_workers
@@ -243,7 +243,7 @@ def test_matriz_throttle_reduce_la_concurrencia_real(tmp_path, tracker, monkeypa
     dianas = [{"id": "d1"}]
     ligandos = [{"id": f"L{i}"} for i in range(6)]
     cajas = {"d1": {"center": [0, 0, 0], "size": [20, 20, 20]}}
-    docking_cfg = {"semillas": [1], "exhaustiveness": 8, "cpu": 0}
+    docking_cfg = {"seeds": [1], "exhaustiveness": 8, "cpu": 0}
     P = FakeP(tmp_path, dianas, ligandos, [], docking_cfg, cajas)
     _preparar_archivos(P)
 
@@ -255,7 +255,7 @@ def test_matriz_throttle_reduce_la_concurrencia_real(tmp_path, tracker, monkeypa
 
     buf = io.StringIO()
     with redirect_stdout(buf):
-        fallos = docking.matriz(P)
+        fallos = docking.matrix(P)
 
     assert fallos == 0
     assert len(tracker.llamadas) == 6
@@ -263,16 +263,16 @@ def test_matriz_throttle_reduce_la_concurrencia_real(tmp_path, tracker, monkeypa
 
 
 def test_matriz_sin_trabajo_no_falla(tmp_path, tracker, monkeypatch):
-    """Ninguna diana tiene receptor/caja: matriz() se omite sin fallos (comportamiento
+    """Ninguna diana tiene receptor/caja: matrix() se omite sin fallos (comportamiento
     original) y no debe intentar siquiera construir un plan de recursos para 0 corridas."""
-    docking_cfg = {"semillas": [1], "exhaustiveness": 8, "cpu": 0}
+    docking_cfg = {"seeds": [1], "exhaustiveness": 8, "cpu": 0}
     P = FakeP(tmp_path, [{"id": "d1"}], [{"id": "L1"}], [], docking_cfg, {})  # sin cajas -> se omite d1
     monkeypatch.setattr(docking, "Motor", _fake_motor_cls(tracker))
     monkeypatch.setattr(docking, "_plan_recursos", lambda P, n: pytest.fail("no debería llamarse sin trabajo"))
 
     buf = io.StringIO()
     with redirect_stdout(buf):
-        fallos = docking.matriz(P)
+        fallos = docking.matrix(P)
     assert fallos == 0
     assert tracker.llamadas == []
 
@@ -280,11 +280,11 @@ def test_matriz_sin_trabajo_no_falla(tmp_path, tracker, monkeypatch):
 # ---------------------------------------------------------------- redocking()
 def test_redocking_en_paralelo_escribe_csv_y_rmsd(tmp_path, tracker, monkeypatch):
     dianas = [
-        {"id": "d1", "caja": {"modo": "ligando", "ref": "HEM:A"}},
-        {"id": "d2", "caja": {"modo": "ciego"}},  # se omite: no es modo 'ligando', no cuenta como fallo
+        {"id": "d1", "box": {"mode": "ligand", "ref": "HEM:A"}},
+        {"id": "d2", "box": {"mode": "blind"}},  # se omite: no es modo 'ligand', no cuenta como fallo
     ]
     cajas = {"d1": {"center": [0, 0, 0], "size": [20, 20, 20]}}
-    docking_cfg = {"semillas": [10, 20], "exhaustiveness": 8, "cpu": 0}
+    docking_cfg = {"seeds": [10, 20], "exhaustiveness": 8, "cpu": 0}
     P = FakeP(tmp_path, dianas, [{"id": "LIGA"}], [], docking_cfg, cajas)
     _preparar_archivos(P)
     open(P.layout.redocking_result_pdbqt("d1", 10), "w").write("X")
@@ -296,7 +296,7 @@ def test_redocking_en_paralelo_escribe_csv_y_rmsd(tmp_path, tracker, monkeypatch
             return (P.layout.redocking_result_pdbqt(d["id"], "crystal"), f"ref-mol-{d['id']}")
 
     import sys
-    monkeypatch.setitem(sys.modules, "ligandos", FakeLigandosMod())
+    monkeypatch.setitem(sys.modules, "ligands", FakeLigandosMod())
 
     rp = ResourcePlan(max_workers=2, cpu_per_worker=1, cores_used=2, reserved_cores=0, notes=[])
     guard = FakeGuard()
@@ -320,8 +320,8 @@ def test_redocking_en_paralelo_escribe_csv_y_rmsd(tmp_path, tracker, monkeypatch
 
 
 def test_redocking_falla_si_falta_receptor(tmp_path, tracker, monkeypatch):
-    dianas = [{"id": "d1", "caja": {"modo": "ligando", "ref": "HEM:A"}}]
-    P = FakeP(tmp_path, dianas, [{"id": "LIGA"}], [], {"semillas": [1], "exhaustiveness": 8, "cpu": 0}, {})
+    dianas = [{"id": "d1", "box": {"mode": "ligand", "ref": "HEM:A"}}]
+    P = FakeP(tmp_path, dianas, [{"id": "LIGA"}], [], {"seeds": [1], "exhaustiveness": 8, "cpu": 0}, {})
     monkeypatch.setattr(docking, "Motor", _fake_motor_cls(tracker))
     monkeypatch.setattr(docking, "_plan_recursos", lambda P, n: pytest.fail("no debería llamarse"))
 

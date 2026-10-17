@@ -1,3 +1,3 @@
-from .models import CajaConfig, Diana, Ligando, ParamsDocking, Proyecto
+from .models import BoxConfig, DockingParams, Ligand, Project, Target
 
-__all__ = ["CajaConfig", "Diana", "Ligando", "ParamsDocking", "Proyecto"]
+__all__ = ["BoxConfig", "DockingParams", "Ligand", "Project", "Target"]

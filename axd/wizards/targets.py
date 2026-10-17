@@ -7,53 +7,53 @@ import shutil
 from .. import config as C
 from .. import ui
 from ..infra import net
-from ..infra.pdb import ADITIVOS
+from ..infra.pdb import ADDITIVES
 from ..layout import Layout
-from .nuevo import _mostrar_estructura
+from .new import _mostrar_estructura
 from .util import id_unico
 
 
-def bucle_dianas(ruta, p):
+def target_loop(ruta, p):
     while True:
-        asistente_diana(ruta, p)
+        target_wizard(ruta, p)
         if not ui.si_no("¿Añadir otra diana?", False):
             break
 
 
-def asistente_diana(ruta, p):
-    ui.titulo(f"Nueva diana #{len(p['dianas']) + 1}")
+def target_wizard(ruta, p):
+    ui.titulo(f"Nueva diana #{len(p['targets']) + 1}")
     fuente = ui.menu("¿De dónde viene la estructura?", [
         ("pdb", "PDB ID (se descarga de RCSB)"),
         ("alphafold", "AlphaFold DB (ID de UniProt)"),
-        ("archivo", "Archivo local (.pdb / .cif, p. ej. modelo de AlphaFold2/ColabFold)"),
+        ("file", "Archivo local (.pdb / .cif, p. ej. modelo de AlphaFold2/ColabFold)"),
     ], defecto=1, salir="Cancelar")
     if not fuente:
         return
     crudos = Layout(ruta).receptors_raw_dir()
-    d = {"fuente": fuente}
+    d = {"source": fuente}
     if fuente == "pdb":
         pdb = ui.preguntar("PDB ID", obligatorio=True,
                            valida=lambda x: None if re.fullmatch(r"[0-9][A-Za-z0-9]{3}", x) else "Un PDB ID tiene 4 caracteres (p. ej. 1M17).").upper()
         nombre = ui.preguntar("Nombre corto de la diana (p. ej. EGFR)", obligatorio=True)
-        d.update(pdb=pdb, nombre=nombre)
+        d.update(pdb=pdb, name=nombre)
         base = os.path.join(crudos, f"{pdb}_{ui.nombre_seguro(nombre)}")
         try:
-            arch = net.descargar_pdb(pdb, base)
+            arch = net.download_pdb(pdb, base)
             ui.ok(f"Descargado {os.path.basename(arch)}")
-            d["archivo"] = os.path.relpath(arch, ruta)
+            d["file"] = os.path.relpath(arch, ruta)
         except Exception as e:
             ui.aviso(f"No se pudo descargar ahora ({e}); se intentará en el paso 'descargar'.")
             arch = None
     elif fuente == "alphafold":
         uni = ui.preguntar("ID de UniProt (p. ej. P00533)", obligatorio=True).upper()
         nombre = ui.preguntar("Nombre corto de la diana", obligatorio=True)
-        d.update(uniprot=uni, nombre=nombre)
+        d.update(uniprot=uni, name=nombre)
         arch = os.path.join(crudos, f"AF-{uni}_{ui.nombre_seguro(nombre)}.pdb")
         try:
-            info = net.descargar_alphafold(uni, arch)
+            info = net.download_alphafold(uni, arch)
             ui.ok(f"Modelo AlphaFold descargado ({info.get('uniprotDescription', '')})")
             ui.info("Recuerda revisar pLDDT: recorta regiones desordenadas si van a estorbar la caja.")
-            d["archivo"] = os.path.relpath(arch, ruta)
+            d["file"] = os.path.relpath(arch, ruta)
         except Exception as e:
             ui.aviso(f"No se pudo descargar ahora ({e}); se intentará en el paso 'descargar'.")
             arch = None
@@ -65,34 +65,34 @@ def asistente_diana(ruta, p):
         if os.path.abspath(src) != os.path.abspath(arch):
             shutil.copy(src, arch)
         ui.ok(f"Copiado a 01_Receptors/{os.path.basename(arch)}")
-        d.update(nombre=nombre, archivo=os.path.relpath(arch, ruta))
+        d.update(name=nombre, file=os.path.relpath(arch, ruta))
 
     cadenas, het = _mostrar_estructura(arch) if arch else ({}, [])
     defecto_cad = "".join(list(cadenas)[:1]) if cadenas else ""
-    d["cadenas"] = ui.preguntar("Cadenas a conservar (p. ej. A o AB; vacío = todas)", defecto_cad).replace(",", "").replace(" ", "")
+    d["chains"] = ui.preguntar("Cadenas a conservar (p. ej. A o AB; vacío = todas)", defecto_cad).replace(",", "").replace(" ", "")
     cof = ui.preguntar("Cofactores/iones a conservar en el receptor, RES:CADENA separados por coma (p. ej. HEM:A,MG:A; vacío = ninguno)", "")
-    d["cofactores"] = [x.strip().upper() for x in cof.split(",") if x.strip()]
+    d["cofactors"] = [x.strip().upper() for x in cof.split(",") if x.strip()]
 
-    candidatos = [h for h in het if h[0] not in ADITIVOS and h[3] >= 6]
+    candidatos = [h for h in het if h[0] not in ADDITIVES and h[3] >= 6]
     ops = []
     if fuente != "alphafold":
-        ops.append(("ligando", "Ligando co-cristalizado (centro en el ligando + margen) — permite redocking"))
-    ops += [("residuos", "Residuos del sitio activo (p. ej. A:745,A:790,A:855)"),
-            ("ciego", "Docking ciego (caja sobre toda la proteína)"),
+        ops.append(("ligand", "Ligando co-cristalizado (centro en el ligando + margen) — permite redocking"))
+    ops += [("residues", "Residuos del sitio activo (p. ej. A:745,A:790,A:855)"),
+            ("blind", "Docking ciego (caja sobre toda la proteína)"),
             ("manual", "Coordenadas manuales (centro y tamaño)")]
     modo = ui.menu("¿Cómo definimos la caja de docking?", ops, defecto=1, salir=None)
-    caja = {"modo": modo}
-    if modo == "ligando":
+    caja = {"mode": modo}
+    if modo == "ligand":
         sug = f"{candidatos[0][0]}:{candidatos[0][1]}" if candidatos else None
         ref = ui.preguntar("Ligando de referencia RES:CADENA (p. ej. AQ4:A)", sug, obligatorio=True,
                            valida=lambda x: None if re.fullmatch(r"[A-Za-z0-9]{1,3}:[A-Za-z0-9]", x.strip()) else "Formato RES:CADENA").upper()
-        caja.update(ref=ref, margen=ui.preguntar_float("Margen alrededor del ligando (Å)", 10.0),
-                    minimo=ui.preguntar_float("Tamaño mínimo por eje (Å)", 22.0))
-    elif modo == "residuos":
-        caja.update(residuos=ui.preguntar("Residuos (CADENA:NÚM o NÚM, separados por coma)", obligatorio=True),
-                    margen=ui.preguntar_float("Margen (Å)", 8.0), minimo=ui.preguntar_float("Tamaño mínimo por eje (Å)", 20.0))
-    elif modo == "ciego":
-        caja.update(margen=ui.preguntar_float("Margen alrededor de la proteína (Å)", 10.0))
+        caja.update(ref=ref, margin=ui.preguntar_float("Margen alrededor del ligando (Å)", 10.0),
+                    minimum=ui.preguntar_float("Tamaño mínimo por eje (Å)", 22.0))
+    elif modo == "residues":
+        caja.update(residues=ui.preguntar("Residuos (CADENA:NÚM o NÚM, separados por coma)", obligatorio=True),
+                    margin=ui.preguntar_float("Margen (Å)", 8.0), minimum=ui.preguntar_float("Tamaño mínimo por eje (Å)", 20.0))
+    elif modo == "blind":
+        caja.update(margin=ui.preguntar_float("Margen alrededor de la proteína (Å)", 10.0))
         ui.info("Tip: en docking ciego sube exhaustiveness (≥ 64) en los parámetros.")
     else:
         c = ui.preguntar("Centro x y z (separado por espacios)", obligatorio=True,
@@ -101,9 +101,9 @@ def asistente_diana(ruta, p):
                          valida=lambda x: None if len(x.replace(",", " ").split()) == 3 else "Necesito 3 números")
         caja.update(center=[float(v) for v in c.replace(",", " ").split()],
                     size=[float(v) for v in s.replace(",", " ").split()])
-    d["caja"] = caja
-    base_id = f"{d['pdb']}_{ui.nombre_seguro(d['nombre'])}" if d.get("pdb") else ui.nombre_seguro(d["nombre"])
-    d["id"] = id_unico(base_id, {x["id"] for x in p["dianas"]})
-    p["dianas"].append(d)
-    C.guardar_proyecto(ruta, p)
+    d["box"] = caja
+    base_id = f"{d['pdb']}_{ui.nombre_seguro(d['name'])}" if d.get("pdb") else ui.nombre_seguro(d["name"])
+    d["id"] = id_unico(base_id, {x["id"] for x in p["targets"]})
+    p["targets"].append(d)
+    C.save_project(ruta, p)
     ui.ok(f"Diana '{d['id']}' añadida.")

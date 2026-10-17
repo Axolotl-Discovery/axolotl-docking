@@ -323,10 +323,10 @@ def migrate_in_place(root: str, project_dict: dict) -> tuple[bool, dict]:
             changed = True
     _rename_tokens_in_tree(root)
 
-    for key in ("dianas", "ligandos", "controles"):
+    for key in ("targets", "ligands", "controls"):
         for item in project_dict.get(key, []):
-            if item.get("archivo"):
-                item["archivo"] = _remap_relative_path(item["archivo"])
+            if item.get("file"):
+                item["file"] = _remap_relative_path(item["file"])
 
     project_dict["layout_version"] = CURRENT_LAYOUT_VERSION
     return True, project_dict

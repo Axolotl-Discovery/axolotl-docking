@@ -1,4 +1,4 @@
-"""Paso 'receptores': limpieza (cadenas, altloc, cofactores), PDBFixer, prepare_receptor y cajas.
+"""Paso 'receptors': limpieza (cadenas, altloc, cofactores), PDBFixer, prepare_receptor y cajas.
 
 Lecciones del entorno Axolotl aplicadas aquí:
   · NUNCA se usa Open Babel para receptores (fragmenta proteínas grandes): se usa prepare_receptor (ADFRsuite).
@@ -11,8 +11,8 @@ import shutil
 
 import numpy as np
 
-from comun import correr, en_tmp, herramienta, log, titulo
-from axd.domain.cajas import Caja, CajaLigando, ContextoCaja
+from common import run_cmd, tmp_dir, tool, log, title
+from axd.domain.boxes import Box, LigandBox, BoxContext
 
 MODIFICADOS = {"MSE", "TPO", "SEP", "PTR", "CSO", "HYP", "MLY", "KCX", "CME", "OCS", "CSD", "LLP", "M3L", "SCY"}
 
@@ -61,28 +61,28 @@ def _spec(texto):
 
 def _resolver_auto(d, crudo):
     """Modo básico: decide cadena, cofactores y caja a partir de la estructura."""
-    from axd.infra.pdb import COFACTORES, METALES, decision_auto, inspeccionar_pdb
-    cads, het = inspeccionar_pdb(crudo)
-    ref, cad = decision_auto(het, cads)
-    if d.get("cadenas") == "auto":
-        d["cadenas"] = cad
-    if d.get("cofactores") == "auto":
-        d["cofactores"] = sorted({f"{h[0]}:{h[1]}" for h in het
-                                  if h[0] in COFACTORES | METALES and (not d["cadenas"] or h[1] in d["cadenas"])})
-    if d.get("caja", {}).get("modo") == "auto":
-        d["caja"] = ({"modo": "ligando", "ref": ref, "margen": 10.0, "minimo": 22.0, "auto": True} if ref
-                     else {"modo": "ciego", "margen": 10.0, "auto": True})
-    log(f"    automático → cadena {d['cadenas'] or 'todas'}"
-        + (f", cofactores {', '.join(d['cofactores'])}" if d["cofactores"] else "")
-        + (f", sitio = ligando {ref}" if d["caja"]["modo"] == "ligando" else ", docking ciego (no hay ligando co-cristalizado)"))
+    from axd.infra.pdb import COFACTOR_CODES, METAL_CODES, auto_decision, inspect_pdb
+    cads, het = inspect_pdb(crudo)
+    ref, cad = auto_decision(het, cads)
+    if d.get("chains") == "auto":
+        d["chains"] = cad
+    if d.get("cofactors") == "auto":
+        d["cofactors"] = sorted({f"{h[0]}:{h[1]}" for h in het
+                                 if h[0] in COFACTOR_CODES | METAL_CODES and (not d["chains"] or h[1] in d["chains"])})
+    if d.get("box", {}).get("mode") == "auto":
+        d["box"] = ({"mode": "ligand", "ref": ref, "margin": 10.0, "minimum": 22.0, "auto": True} if ref
+                    else {"mode": "blind", "margin": 10.0, "auto": True})
+    log(f"    automático → cadena {d['chains'] or 'todas'}"
+        + (f", cofactores {', '.join(d['cofactors'])}" if d["cofactors"] else "")
+        + (f", sitio = ligando {ref}" if d["box"]["mode"] == "ligand" else ", docking ciego (no hay ligando co-cristalizado)"))
 
 
-def ejecutar(P, rehacer=False):
-    titulo("2 · Receptores y cajas de docking")
-    prep = herramienta("prepare_receptor", ["~/tools/ADFRsuite-1.0/bin/prepare_receptor"])
+def run(P, rehacer=False):
+    title("2 · Receptores y cajas de docking")
+    prep = tool("prepare_receptor", ["~/tools/ADFRsuite-1.0/bin/prepare_receptor"])
     if not prep:
         log("  ✘ prepare_receptor (ADFRsuite) no está instalado. Corre:  Docking entorno")
-        return len(P.cfg["dianas"])
+        return len(P.cfg["targets"])
     try:
         from openmm.app import PDBFile
         from pdbfixer import PDBFixer
@@ -91,24 +91,24 @@ def ejecutar(P, rehacer=False):
         fixer = False
         log("  ⚠ PDBFixer no disponible: no se completarán átomos faltantes")
 
-    cajas = P.cajas()
+    boxes = P.boxes()
     fallos = 0
     cambios = False
-    for d in P.cfg["dianas"]:
+    for d in P.cfg["targets"]:
         log(f"\n  ▸ {d['id']}")
-        if not d.get("archivo") or not os.path.exists(P.r(d["archivo"])):
-            log("    ✘ falta la estructura (corre el paso 'descargar')"); fallos += 1; continue
+        if not d.get("file") or not os.path.exists(P.r(d["file"])):
+            log("    ✘ falta la estructura (corre el paso 'download')"); fallos += 1; continue
         salida = P.receptor_pdbqt(d)
-        tmp = en_tmp("rec")
+        tmp = tmp_dir("rec")
         try:
-            crudo = _a_pdb(P.r(d["archivo"]), tmp)
-            if "auto" in (d.get("cadenas"), d.get("cofactores"), d.get("caja", {}).get("modo")):
+            crudo = _a_pdb(P.r(d["file"]), tmp)
+            if "auto" in (d.get("chains"), d.get("cofactors"), d.get("box", {}).get("mode")):
                 _resolver_auto(d, crudo)
                 cambios = True
-            cadenas = set(d.get("cadenas") or "")
-            cofs = [_spec(x) for x in d.get("cofactores", [])]
-            caja_cfg = d.get("caja", {"modo": "ciego", "margen": 10})
-            ref_spec = _spec(caja_cfg["ref"]) if caja_cfg.get("modo") == "ligando" else None
+            cadenas = set(d.get("chains") or "")
+            cofs = [_spec(x) for x in d.get("cofactors", [])]
+            box_cfg = d.get("box", {"mode": "blind", "margin": 10})
+            ref_spec = _spec(box_cfg["ref"]) if box_cfg.get("mode") == "ligand" else None
 
             pol, cof, ref = [], [], []
             ref_res = None
@@ -132,7 +132,7 @@ def ejecutar(P, rehacer=False):
                 elif rn in MODIFICADOS:
                     pol.append(l)
             if not pol:
-                log(f"    ✘ no quedaron átomos de proteína (¿cadenas '{d.get('cadenas')}' correctas?)"); fallos += 1; continue
+                log(f"    ✘ no quedaron átomos de proteína (¿cadenas '{d.get('chains')}' correctas?)"); fallos += 1; continue
 
             # ---- PDBFixer sobre el polímero
             pol_pdb = os.path.join(tmp, "pol.pdb")
@@ -150,23 +150,23 @@ def ejecutar(P, rehacer=False):
                 except Exception as e:  # noqa: BLE001
                     log(f"    ⚠ PDBFixer falló ({str(e)[:80]}); sigo con la estructura original")
             cuerpo = [l for l in open(pol_pdb) if l[:6] in ("ATOM  ", "HETATM", "TER   ")]
-            limpio = P.receptor_limpio(d)
+            limpio = P.receptor_clean(d)
             open(limpio, "w").writelines(cuerpo + cof + ["END\n"])
             n_at = sum(1 for l in cuerpo if l[:4] == "ATOM")
             log(f"    limpio: {n_at} átomos de proteína, {len(cof)} de cofactores → {P.rel(limpio)}")
 
             # ---- caja
-            modo = caja_cfg.get("modo", "ciego")
-            caja_obj = Caja.crear(caja_cfg)
-            if isinstance(caja_obj, CajaLigando) and ref:
+            mode = box_cfg.get("mode", "blind")
+            box_obj = Box.create(box_cfg)
+            if isinstance(box_obj, LigandBox) and ref:
                 open(P.ref_pdb(d), "w").writelines([l.replace("ATOM  ", "HETATM") for l in ref] + ["END\n"])
-            resultado = caja_obj.calcular(ContextoCaja(cuerpo=cuerpo, cof=cof, ref=ref, caja_fn=_caja, xyz_fn=_xyz))
-            if not resultado.ok:
-                log(f"    ✘ {resultado.error}"); fallos += 1; continue
-            if resultado.aviso:
-                log(f"    ⚠ {resultado.aviso}")
-            c, s, det = resultado.center, resultado.size, resultado.detalle
-            cajas[d["id"]] = dict(center=c, size=s, modo=modo, detalle=det)
+            result = box_obj.calculate(BoxContext(body=cuerpo, cofactors=cof, ref=ref, box_fn=_caja, xyz_fn=_xyz))
+            if not result.ok:
+                log(f"    ✘ {result.error}"); fallos += 1; continue
+            if result.warning:
+                log(f"    ⚠ {result.warning}")
+            c, s, det = result.center, result.size, result.detail
+            boxes[d["id"]] = dict(center=c, size=s, mode=mode, detail=det)
             log(f"    caja: centro {c}  tamaño {s} Å  [{det}]")
 
             # ---- PDBQT con ADFRsuite
@@ -174,8 +174,8 @@ def ejecutar(P, rehacer=False):
                 log(f"    = {P.rel(salida)} ya existe")
                 continue
             shutil.copy(limpio, os.path.join(tmp, "rec.pdb"))
-            rc, out = correr([prep, "-r", "rec.pdb", "-o", "rec.pdbqt", "-A", "hydrogens", "-U", "nphs_lps_waters"],
-                             cwd=tmp, timeout=1800)
+            rc, out = run_cmd([prep, "-r", "rec.pdb", "-o", "rec.pdbqt", "-A", "hydrogens", "-U", "nphs_lps_waters"],
+                              cwd=tmp, timeout=1800)
             open(P.layout.prep_receptor_log(d["id"]), "w").write(out)
             if os.path.exists(os.path.join(tmp, "rec.pdbqt")) and os.path.getsize(os.path.join(tmp, "rec.pdbqt")) > 0:
                 shutil.copy(os.path.join(tmp, "rec.pdbqt"), salida)
@@ -187,9 +187,9 @@ def ejecutar(P, rehacer=False):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    json.dump(cajas, open(P.layout.boxes_json(), "w"), indent=2)
+    json.dump(boxes, open(P.layout.boxes_json(), "w"), indent=2)
     if cambios:
-        P.guardar()  # guarda lo que se decidió automáticamente (cadenas, cofactores, caja)
-    log(f"\n  Receptores: {len(P.cfg['dianas']) - fallos}/{len(P.cfg['dianas'])} listos · "
+        P.save()  # guarda lo que se decidió automáticamente (cadenas, cofactores, caja)
+    log(f"\n  Receptores: {len(P.cfg['targets']) - fallos}/{len(P.cfg['targets'])} listos · "
         f"cajas en {P.rel(P.layout.boxes_json())}")
     return fallos

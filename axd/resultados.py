@@ -148,8 +148,8 @@ def abrir_en_windows(ruta):
 
 def abrir_pymol(ruta):
     """Abre en PyMOL del entorno conda (necesita WSLg: Windows 11 o Windows 10 actualizado)."""
-    g = C.cargar_global()
-    conda = C.ruta_conda(g)
+    g = C.load_global()
+    conda = C.conda_path(g)
     if not conda:
         ui.error("No encontré conda."); return
     cmd = (f'source "{conda}/etc/profile.d/conda.sh" && conda activate "{g["entorno"]}" && '
@@ -182,9 +182,9 @@ def abrir_complejo(proy, ruta=None):
 
 def menu_resultados(proy):
     while True:
-        p = C.cargar_proyecto(proy)
+        p = C.load_project(proy)
         hay = os.path.exists(Layout(proy).affinities_summary_csv())
-        op = ui.menu(f"Resultados · {p['nombre']}", [
+        op = ui.menu(f"Resultados · {p['name']}", [
             ("afin", "Tabla de afinidades"),
             ("matriz", "Matriz ligando × diana"),
             ("redock", "Validación (redocking)"),
@@ -205,7 +205,7 @@ def menu_resultados(proy):
         elif op == "inter":
             ver_interacciones(proy)
         elif op == "analizar":
-            runner.ejecutar(proy, ["resumen", "interacciones"], fondo=False)
+            runner.ejecutar(proy, ["summary", "interactions"], fondo=False)
         elif op == "complejo":
             abrir_complejo(proy)
         elif op == "excel":

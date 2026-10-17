@@ -14,21 +14,21 @@ import time
 
 import numpy as np
 
-from comun import afinidad, completo, correr, en_tmp, herramienta, log, pose1_pdb, titulo
+from common import affinity, is_complete, run_cmd, tmp_dir, tool, log, pose1_pdb, title
 from axd.thermal import Decision
 
 
 def _smina():
-    return herramienta("smina", ["~/tools/bin/smina"])
+    return tool("smina", ["~/tools/bin/smina"])
 
 
 def correr_smina(smina, rec, lig, caja, salida, semilla, d, rehacer=False):
     """Ejecuta smina en /tmp (sin espacios) y escribe la salida de forma atómica.
     Devuelve (afinidad, ya_existia)."""
-    if completo(salida) and not rehacer:
-        return afinidad(salida), True
+    if is_complete(salida) and not rehacer:
+        return affinity(salida), True
     os.makedirs(os.path.dirname(salida), exist_ok=True)
-    tmp = en_tmp("dock")
+    tmp = tmp_dir("dock")
     try:
         shutil.copy(rec, os.path.join(tmp, "r.pdbqt"))
         shutil.copy(lig, os.path.join(tmp, "l.pdbqt"))
@@ -40,7 +40,7 @@ def correr_smina(smina, rec, lig, caja, salida, semilla, d, rehacer=False):
                "--energy_range", str(d["energy_range"]), "--seed", str(semilla), "-o", "o.pdbqt"]
         if int(d.get("cpu") or 0) > 0:
             cmd += ["--cpu", str(d["cpu"])]
-        rc, out = correr(cmd, cwd=tmp)
+        rc, out = run_cmd(cmd, cwd=tmp)
         open(salida[:-6] + ".log", "w").write(" ".join(cmd) + "\n\n" + out)
         o = os.path.join(tmp, "o.pdbqt")
         if rc != 0 or not os.path.exists(o) or os.path.getsize(o) == 0:
@@ -48,7 +48,7 @@ def correr_smina(smina, rec, lig, caja, salida, semilla, d, rehacer=False):
             return None, False
         shutil.copy(o, salida + ".part")
         os.replace(salida + ".part", salida)
-        return afinidad(salida), False
+        return affinity(salida), False
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -70,10 +70,10 @@ class Motor:
     (ligandos, controles y redocking) para que las energías sean comparables."""
 
     def __init__(self, P, ligandos_pdbqt):
-        import metales
-        self.P, self.m = P, metales
+        import metals
+        self.P, self.m = P, metals
         pedido = P.cfg["docking"].get("motor", "smina")
-        raros = [p for p in ligandos_pdbqt if os.path.exists(p) and metales.necesita_ad4(p)]
+        raros = [p for p in ligandos_pdbqt if os.path.exists(p) and metals.necesita_ad4(p)]
         self.nombre = "ad4" if (pedido == "ad4" or raros) else "smina"
         self.smina = _smina()
         self.param = None
@@ -81,9 +81,9 @@ class Motor:
             tipos = set()
             for p in ligandos_pdbqt:
                 if os.path.exists(p):
-                    tipos |= metales.tipos_pdbqt(p)
+                    tipos |= metals.tipos_pdbqt(p)
             self.tipos = tipos
-            self.param, base = metales.escribir_parametros(P, tipos - metales.EN_AD4)
+            self.param, base = metals.escribir_parametros(P, tipos - metals.EN_AD4)
             if raros:
                 log("  ⚛ Hay ligandos con átomos no comunes → TODO el proyecto se dockea con AutoDock4 "
                     "(para que las energías sean comparables)")
@@ -102,8 +102,8 @@ class Motor:
     def dockear(self, diana_id, rec, lig, caja, salida, semilla, d, rehacer=False):
         if self.nombre == "smina":
             return correr_smina(self.smina, rec, lig, caja, salida, semilla, d, rehacer)
-        if completo(salida) and not rehacer:
-            return afinidad(salida), True
+        if is_complete(salida) and not rehacer:
+            return affinity(salida), True
         os.makedirs(os.path.dirname(salida), exist_ok=True)
         try:
             mapas = self.m.preparar_mapas(self.P, diana_id, rec, caja, self.tipos | self.m.tipos_pdbqt(lig), self.param)
@@ -122,9 +122,9 @@ def _plan_recursos(P, n_jobs):
     para esta corrida del pipeline. `n_jobs` es el número de corridas pendientes: el plan
     no crea más trabajadores que trabajo por hacer."""
     from axd import hardware as HW, tuning
-    from axd.config import cargar_global
+    from axd.config import load_global
     hw = HW.detect()
-    g = cargar_global()
+    g = load_global()
     pol = tuning.ThermalPolicy.from_config(g.get("thermal"))
     cpu_pedido = int(P.cfg["docking"].get("cpu") or 0) or None
     rp = tuning.plan(hw, n_jobs=max(1, n_jobs), cpu_per_worker=cpu_pedido)
@@ -181,18 +181,18 @@ def _ejecutar_en_pool(jobs, ejecutar_uno, rp, guard):
 
 
 def redocking(P, rehacer=False):
-    titulo("4 · Validación por redocking")
-    from ligandos import preparar_ref_redocking
-    cajas, d = P.cajas(), P.cfg["docking"]
-    todos = [P.ligando_pdbqt(l, c) for x in P.cfg["dianas"] for l, c in P.ligandos_para(x["id"])]
+    title("4 · Validación por redocking")
+    from ligands import preparar_ref_redocking
+    cajas, d = P.boxes(), P.cfg["docking"]
+    todos = [P.ligand_pdbqt(l, c) for x in P.cfg["targets"] for l, c in P.ligands_for(x["id"])]
     motor = Motor(P, todos)
     if not motor.disponible():
         return 1
     fallos = 0
     # ---- preparación por diana (I/O + RDKit: se queda secuencial, no es el cuello de botella)
     preparadas = []
-    for diana in P.cfg["dianas"]:
-        if diana.get("caja", {}).get("modo") != "ligando":
+    for diana in P.cfg["targets"]:
+        if diana.get("box", {}).get("mode") != "ligand":
             continue
         if diana["id"] not in cajas or not os.path.exists(P.receptor_pdbqt(diana)):
             log(f"  ✘ {diana['id']}: falta receptor/caja (paso 'receptores')"); fallos += 1; continue
@@ -206,7 +206,7 @@ def redocking(P, rehacer=False):
         preparadas.append((diana, lig, ref))
 
     jobs = [{"diana": diana, "lig": lig, "s": s, "sal": P.layout.redocking_result_pdbqt(diana["id"], s)}
-            for diana, lig, ref in preparadas for s in d["semillas"]]
+            for diana, lig, ref in preparadas for s in d["seeds"]]
 
     def _correr_redocking(job):
         return motor.dockear(job["diana"]["id"], P.receptor_pdbqt(job["diana"]), job["lig"],
@@ -222,7 +222,7 @@ def redocking(P, rehacer=False):
             diana = job["diana"]
             if diana["id"] not in dianas_con_encabezado:
                 dianas_con_encabezado.add(diana["id"])
-                log(f"\n  ▸ {diana['id']} · ligando {diana['caja']['ref']}")
+                log(f"\n  ▸ {diana['id']} · ligando {diana['box']['ref']}")
             r = None
             if e is not None:
                 try:
@@ -250,12 +250,12 @@ def redocking(P, rehacer=False):
     return fallos
 
 
-def matriz(P, rehacer=False):
-    titulo("5 · Docking (matriz ligandos × dianas)")
-    cajas, d = P.cajas(), P.cfg["docking"]
+def matrix(P, rehacer=False):
+    title("5 · Docking (matriz ligandos × dianas)")
+    cajas, d = P.boxes(), P.cfg["docking"]
     if rehacer:  # no se borra nada: lo anterior se mueve a un respaldo
         resp = P.layout.results_backup_dir(time.strftime("%Y%m%d_%H%M"))
-        for diana in P.cfg["dianas"]:
+        for diana in P.cfg["targets"]:
             src = P.layout.target_results_dir(diana["id"])
             if os.path.isdir(src) and os.listdir(src):
                 os.makedirs(resp, exist_ok=True)
@@ -263,13 +263,13 @@ def matriz(P, rehacer=False):
         if os.path.isdir(resp):
             log(f"  Resultados anteriores respaldados en {P.rel(resp)}")
     trabajo = []
-    for diana in P.cfg["dianas"]:
+    for diana in P.cfg["targets"]:
         rec = P.receptor_pdbqt(diana)
         if diana["id"] not in cajas or not os.path.exists(rec):
             log(f"  ✘ {diana['id']}: falta receptor o caja (corre 'receptores'); se omite")
             continue
-        for lig, ctrl in P.ligandos_para(diana["id"]):
-            lp = P.ligando_pdbqt(lig, ctrl)
+        for lig, ctrl in P.ligands_for(diana["id"]):
+            lp = P.ligand_pdbqt(lig, ctrl)
             if not os.path.exists(lp):
                 log(f"  ✘ {lig['id']}: falta su PDBQT (corre 'ligandos'); se omite")
                 continue
@@ -277,18 +277,18 @@ def matriz(P, rehacer=False):
     motor = Motor(P, [lp for (_, _, _, lp, _) in trabajo])
     if not motor.disponible():
         return 1
-    total = len(trabajo) * len(d["semillas"])
-    hechas = sum(1 for (di, _, lig, _, _) in trabajo for s in d["semillas"]
-                 if completo(P.layout.result_pdbqt(di["id"], lig["id"], s))) if not rehacer else 0
-    log(f"  {len(trabajo)} pares ligando–diana × {len(d['semillas'])} semillas = {total} corridas "
+    total = len(trabajo) * len(d["seeds"])
+    hechas = sum(1 for (di, _, lig, _, _) in trabajo for s in d["seeds"]
+                 if is_complete(P.layout.result_pdbqt(di["id"], lig["id"], s))) if not rehacer else 0
+    log(f"  {len(trabajo)} pares ligando–diana × {len(d['seeds'])} semillas = {total} corridas "
         f"({hechas} ya hechas) · {motor.etiqueta(d)}")
 
     jobs = []
     for diana, rec, lig, lp, ctrl in trabajo:
         dd = d
-        if P.cfg.get("modo") == "basico" and cajas[diana["id"]].get("modo") == "ciego":
+        if P.cfg.get("mode") == "basic" and cajas[diana["id"]].get("mode") == "blind":
             dd = dict(d, exhaustiveness=max(int(d["exhaustiveness"]), 64))  # ciego necesita más búsqueda
-        for s in d["semillas"]:
+        for s in d["seeds"]:
             sal = P.layout.result_pdbqt(diana["id"], lig["id"], s)
             jobs.append({"diana": diana, "rec": rec, "lig": lig, "lp": lp, "ctrl": ctrl, "s": s, "sal": sal, "dd": dd})
 
@@ -297,7 +297,7 @@ def matriz(P, rehacer=False):
         return motor.dockear(job["diana"]["id"], job["rec"], job["lp"], cajas[job["diana"]["id"]],
                               job["sal"], job["s"], dd, rehacer)
 
-    restantes = {(diana["id"], lig["id"]): len(d["semillas"]) for diana, rec, lig, lp, ctrl in trabajo}
+    restantes = {(diana["id"], lig["id"]): len(d["seeds"]) for diana, rec, lig, lp, ctrl in trabajo}
     acumulado = {clave: [] for clave in restantes}
     dianas_con_encabezado = set()
     t0, nuevas, fallos = time.time(), 0, 0

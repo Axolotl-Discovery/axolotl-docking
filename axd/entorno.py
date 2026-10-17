@@ -22,15 +22,15 @@ CHEQUEO_SH = "\n".join(
 
 
 def doctor(reparar_preguntando=True):
-    g = C.cargar_global()
+    g = C.load_global()
     ui.titulo("Verificación del entorno")
     problemas = 0
-    conda = C.ruta_conda(g)
+    conda = C.conda_path(g)
     if conda:
         ui.ok(f"conda: {conda}")
     else:
         ui.error("conda/miniforge no encontrado"); problemas += 1
-    envs = C.entornos_conda(conda)
+    envs = C.conda_environments(conda)
     if conda and g["entorno"] in envs:
         ui.ok(f"entorno conda: {g['entorno']}")
         bash = (f'source "{conda}/etc/profile.d/conda.sh" && conda activate "{g["entorno"]}" || exit 3\n'
@@ -79,7 +79,7 @@ def doctor(reparar_preguntando=True):
 
 
 def instalar(extra=None):
-    g = C.cargar_global()
+    g = C.load_global()
     script = os.path.join(C.APP, "scripts", "instalar_entorno.sh")
     env = dict(os.environ, AXD_ENV=g["entorno"])
     subprocess.call(["bash", script] + (extra or []), env=env)
@@ -87,13 +87,13 @@ def instalar(extra=None):
 
 def elegir_entorno():
     """Permite usar un entorno existente (p. ej. axolot-Docking) en lugar de crear uno nuevo."""
-    g = C.cargar_global()
-    envs = [e for e in C.entornos_conda(C.ruta_conda(g)) if e not in ("base", "miniforge3")]
+    g = C.load_global()
+    envs = [e for e in C.conda_environments(C.conda_path(g)) if e not in ("base", "miniforge3")]
     if not envs:
         ui.info("No hay entornos conda (aparte de base).")
         return
     k = ui.menu(f"Entorno a usar (actual: {g['entorno']})", [(e, e) for e in envs])
     if k:
         g["entorno"] = k
-        C.guardar_global(g)
+        C.save_global(g)
         ui.ok(f"Usaré el entorno '{k}'.")

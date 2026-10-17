@@ -15,7 +15,7 @@ from collections import Counter
 
 import numpy as np
 
-from comun import elemento_pdbqt, log, titulo
+from common import pdbqt_element, log, title
 
 TIPOS_ES = {"hidrofobica": "Hidrofóbica", "puente_h": "Puente de H", "pi_stacking": "Apilamiento π",
             "pi_cation": "Catión-π", "puente_salino": "Puente salino", "halogeno": "Enlace de halógeno",
@@ -32,7 +32,7 @@ def _pose_rdkit(pose_pdbqt, plantilla_sdf):
         if l.startswith("ENDMDL"):
             break
         if l[:6] in ("ATOM  ", "HETATM"):
-            el = elemento_pdbqt(l)
+            el = pdbqt_element(l)
             if el == "H":
                 continue
             n += 1
@@ -65,7 +65,7 @@ def _ligando_pdb(mol, cadena="Z"):
 
 
 def construir_complejo(P, diana, lig_id, pose_pdbqt, control):
-    rec = P.receptor_limpio(diana)
+    rec = P.receptor_clean(diana)
     if not os.path.exists(rec):
         return None, None
     plantilla = P.layout.ligand_prep_sdf(lig_id, control)
@@ -189,8 +189,8 @@ def interacciones_geometricas(complejo):
 
 
 # ---------------------------------------------------------------- paso
-def ejecutar(P, rehacer=False):
-    titulo("7 · Complejos e interacciones")
+def run(P, rehacer=False):
+    title("7 · Complejos e interacciones")
     import importlib.util
     if importlib.util.find_spec("plip"):
         motor = "PLIP"
@@ -201,8 +201,8 @@ def ejecutar(P, rehacer=False):
     if not poses:
         log("  Aún no hay mejores poses (corre 'docking' y 'resumen').")
         return 0
-    dianas = {d["id"]: d for d in P.cfg["dianas"]}
-    controles = {c["id"] for c in P.cfg["controles"]}
+    dianas = {d["id"]: d for d in P.cfg["targets"]}
+    controles = {c["id"] for c in P.cfg["controls"]}
     detalle, resumen, fallos = [], [], 0
     for pose in poses:
         did, lid = os.path.basename(pose)[:-6].split("__", 1)

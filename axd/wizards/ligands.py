@@ -7,19 +7,19 @@ import shutil
 from .. import config as C
 from .. import ui
 from ..layout import Layout
-from .nuevo import _agregar_texto
+from .new import _agregar_texto
 from .util import EXT_LIGANDO, id_unico, parece_smiles, partir_sdf
 
 
-def asistente_ligandos(ruta, p, controles=False):
-    clave = "controles" if controles else "ligandos"
+def ligands_wizard(ruta, p, controles=False):
+    clave = "controls" if controles else "ligands"
     carpeta = Layout(ruta).controls_dir() if controles else Layout(ruta).ligands_dir()
     etiqueta = "controles positivos" if controles else "ligandos"
-    ids = {x["id"] for x in p["ligandos"] + p["controles"]}
+    ids = {x["id"] for x in p["ligands"] + p["controls"]}
     nuevos = []
 
     def agregar(e):
-        e["id"] = id_unico(ui.nombre_seguro(e["nombre"])[:40], ids)
+        e["id"] = id_unico(ui.nombre_seguro(e["name"])[:40], ids)
         ids.add(e["id"]); nuevos.append(e)
 
     while True:
@@ -49,9 +49,9 @@ def asistente_ligandos(ruta, p, controles=False):
                 if partes[0].lower() in ("nombre", "name"):
                     continue
                 if len(partes) >= 2 and parece_smiles(partes[1]):
-                    agregar({"nombre": partes[0], "fuente": "smiles", "smiles": partes[1]})
+                    agregar({"name": partes[0], "source": "smiles", "smiles": partes[1]})
                 else:
-                    agregar({"nombre": partes[0], "fuente": "pubchem", "consulta": partes[1] if len(partes) > 1 else partes[0]})
+                    agregar({"name": partes[0], "source": "pubchem", "query": partes[1] if len(partes) > 1 else partes[0]})
             ui.ok(f"{len(nuevos)} {etiqueta} leídos de la lista.")
         elif modo in ("carpeta", "archivos"):
             if modo == "carpeta":
@@ -63,18 +63,18 @@ def asistente_ligandos(ruta, p, controles=False):
                 ext = os.path.splitext(a)[1].lower()
                 if ext == ".sdf" and len(partir_sdf(a)) > 1:
                     for nom, bloque in partir_sdf(a):
-                        e = {"nombre": nom, "fuente": "archivo"}
+                        e = {"name": nom, "source": "file"}
                         agregar(e)
                         destino = os.path.join(carpeta, e["id"] + ".sdf")
                         open(destino, "w").write(bloque)
-                        e["archivo"] = os.path.relpath(destino, ruta)
+                        e["file"] = os.path.relpath(destino, ruta)
                 else:
-                    e = {"nombre": os.path.splitext(os.path.basename(a))[0], "fuente": "archivo"}
+                    e = {"name": os.path.splitext(os.path.basename(a))[0], "source": "file"}
                     agregar(e)
                     destino = os.path.join(carpeta, e["id"] + ext)
                     if os.path.abspath(a) != os.path.abspath(destino):
                         shutil.copy(a, destino)
-                    e["archivo"] = os.path.relpath(destino, ruta)
+                    e["file"] = os.path.relpath(destino, ruta)
             ui.ok(f"{len(archivos)} archivo(s) copiados a {os.path.relpath(carpeta, ruta)}/")
         elif modo == "smiles":
             ui.info("Línea vacía para terminar.")
@@ -83,21 +83,21 @@ def asistente_ligandos(ruta, p, controles=False):
                 if not n:
                     break
                 s = ui.preguntar("SMILES", obligatorio=True)
-                agregar({"nombre": n, "fuente": "smiles", "smiles": s})
+                agregar({"name": n, "source": "smiles", "smiles": s})
 
-    if controles and nuevos and len(p["dianas"]) > 1:
+    if controles and nuevos and len(p["targets"]) > 1:
         ui.info("Puedes asignar cada control a su diana (si no, se dockea contra todas).")
-        ops = [d["id"] for d in p["dianas"]]
+        ops = [d["id"] for d in p["targets"]]
         for e in nuevos:
             print("     " + "  ".join(f"{ui.rosa(str(i))}) {x}" for i, x in enumerate(ops, 1)))
-            r = ui.preguntar(f"Diana de '{e['nombre']}' (número; vacío = todas)", "",
+            r = ui.preguntar(f"Diana de '{e['name']}' (número; vacío = todas)", "",
                              valida=lambda x: None if x.isdigit() and 1 <= int(x) <= len(ops) else "Número de la lista")
             if r:
-                e["diana"] = ops[int(r) - 1]
-    elif controles and nuevos and len(p["dianas"]) == 1:
+                e["target"] = ops[int(r) - 1]
+    elif controles and nuevos and len(p["targets"]) == 1:
         for e in nuevos:
-            e["diana"] = p["dianas"][0]["id"]
+            e["target"] = p["targets"][0]["id"]
     p[clave].extend(nuevos)
-    C.guardar_proyecto(ruta, p)
+    C.save_project(ruta, p)
     if nuevos:
         ui.ok(f"{len(nuevos)} {etiqueta} añadidos: " + ", ".join(e["id"] for e in nuevos))

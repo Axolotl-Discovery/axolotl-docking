@@ -11,15 +11,15 @@ from . import config as C
 from . import ui
 from .layout import Layout
 
-PASOS = ["descargar", "receptores", "ligandos", "redocking", "docking", "resumen", "interacciones"]
+PASOS = ["download", "receptors", "ligands", "redocking", "docking", "summary", "interactions"]
 DESCRIPCION_PASOS = {
-    "descargar": "Descargar estructuras (RCSB / AlphaFold) y ligandos (PubChem)",
-    "receptores": "Limpiar receptores (PDBFixer + prepare_receptor) y calcular cajas",
-    "ligandos": "Preparar ligandos y controles (3D + Meeko → PDBQT)",
+    "download": "Descargar estructuras (RCSB / AlphaFold) y ligandos (PubChem)",
+    "receptors": "Limpiar receptores (PDBFixer + prepare_receptor) y calcular cajas",
+    "ligands": "Preparar ligandos y controles (3D + Meeko → PDBQT)",
     "redocking": "Validación por redocking del ligando cristalográfico (RMSD)",
     "docking": "Docking smina: todos los ligandos × todas las dianas × semillas",
-    "resumen": "Tabla de afinidades (media ± DE, LE, Δ vs control) y mejores poses",
-    "interacciones": "Complejo proteína+ligando en un PDB y análisis de interacciones (PLIP)",
+    "summary": "Tabla de afinidades (media ± DE, LE, Δ vs control) y mejores poses",
+    "interactions": "Complejo proteína+ligando en un PDB y análisis de interacciones (PLIP)",
 }
 
 
@@ -70,8 +70,8 @@ def _script_entorno(g):
 
 
 def _env(proy):
-    g = C.cargar_global()
-    conda = C.ruta_conda(g)
+    g = C.load_global()
+    conda = C.conda_path(g)
     if not conda:
         ui.error("No encontré conda/miniforge. Instálalo con:  Docking entorno")
         return None
@@ -178,7 +178,7 @@ def reanudar(proy):
                 os.remove(os.path.join(raiz, a)); n += 1
     if n:
         ui.info(f"Eliminé {n} archivos incompletos (.part).")
-    pasos = (e or {}).get("pasos") or ["docking", "resumen"]
+    pasos = (e or {}).get("pasos") or ["docking", "summary"]
     ui.info("Retomando: " + ", ".join(pasos) + ui.gris("  (lo ya terminado se salta)"))
     extra = [x for x in (e or {}).get("extra", []) if x != "--rehacer"]  # reanudar nunca vuelve a empezar de cero
     ejecutar(proy, pasos, fondo=True, extra=extra)
@@ -198,19 +198,19 @@ def _completo(f):
 
 
 def corridas_esperadas(p):
-    sem = p["docking"]["semillas"]
-    dianas = [d["id"] for d in p["dianas"]]
+    sem = p["docking"]["seeds"]
+    dianas = [d["id"] for d in p["targets"]]
     tabla = {}
     for d in dianas:
-        ligs = [l["id"] for l in p["ligandos"]]
-        ligs += [c["id"] for c in p["controles"] if not c.get("diana") or c.get("diana") == d]
+        ligs = [l["id"] for l in p["ligands"]]
+        ligs += [c["id"] for c in p["controls"] if not c.get("target") or c.get("target") == d]
         tabla[d] = [(l, s) for l in ligs for s in sem]
     return tabla
 
 
 def mostrar_avance(proy):
-    p = C.cargar_proyecto(proy)
-    ui.titulo(f"Avance · {p['nombre']}")
+    p = C.load_project(proy)
+    ui.titulo(f"Avance · {p['name']}")
     e = estado(proy)
     if e and e["vivo"]:
         ui.ok(f"Corriendo (PID {e['pid']}) · pasos: {', '.join(e['pasos'])} · desde {e['inicio']}")

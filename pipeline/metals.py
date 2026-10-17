@@ -23,7 +23,7 @@ import re
 import shutil
 import subprocess
 
-from comun import correr, en_tmp, herramienta, log
+from common import run_cmd, tmp_dir, tool, log
 
 # tipos que smina/Vina entienden; cualquier otro obliga a usar AutoDock4
 TIPOS_SMINA = {"C", "A", "N", "NA", "NS", "OA", "OS", "O", "S", "SA", "P", "F", "Cl", "CL", "Br", "BR", "I",
@@ -156,7 +156,7 @@ def _base_ad4():
     """Archivo de parámetros AD4.1 oficial: el de ADFRsuite, uno ya descargado, o se baja del repositorio
     oficial de AutoDock4 (ccsb-scripps/AutoDock4)."""
     cache = os.path.expanduser("~/.config/axolotl-docking/AD4.1_bound.dat")
-    ad4_bin = herramienta("autodock4")
+    ad4_bin = tool("autodock4")
     candidatos = [os.path.expanduser("~/tools/ADFRsuite-1.0")]
     if ad4_bin:
         candidatos.append(os.path.dirname(os.path.dirname(ad4_bin)))
@@ -172,7 +172,7 @@ def _base_ad4():
     from axd.infra import net
     try:
         os.makedirs(os.path.dirname(cache), exist_ok=True)
-        net.bajar(URL_AD4, cache, timeout=30, intentos=1)
+        net.download(URL_AD4, cache, timeout=30, attempts=1)
         if b"atom_par OA" not in open(cache, "rb").read():
             os.remove(cache)
             return None
@@ -230,10 +230,10 @@ def preparar_mapas(P, diana_id, receptor, caja, tipos_lig, param):
     clave = " ".join(sorted(tipos_lig)) + f" | {caja['center']} {caja['size']}"
     if os.path.exists(marca) and open(marca).read() == clave:
         return carpeta
-    autogrid = herramienta("autogrid4", ["~/tools/ADFRsuite-1.0/bin/autogrid4"])
+    autogrid = tool("autogrid4", ["~/tools/ADFRsuite-1.0/bin/autogrid4"])
     if not autogrid:
         raise ValueError("autogrid4 no está (viene con ADFRsuite: corre 'Docking entorno')")
-    tmp = en_tmp("grid")
+    tmp = tmp_dir("grid")
     try:
         shutil.copy(receptor, os.path.join(tmp, "rec.pdbqt"))
         shutil.copy(param, os.path.join(tmp, "AD4_axd.dat"))
@@ -247,7 +247,7 @@ def preparar_mapas(P, diana_id, receptor, caja, tipos_lig, param):
                "receptor rec.pdbqt", "gridcenter {:.3f} {:.3f} {:.3f}".format(*caja["center"]), "smooth 0.5"]
         gpf += [f"map rec.{t}.map" for t in tl] + ["elecmap rec.e.map", "dsolvmap rec.d.map", "dielectric -0.1465"]
         open(os.path.join(tmp, "rec.gpf"), "w").write("\n".join(gpf) + "\n")
-        rc, out = correr([autogrid, "-p", "rec.gpf", "-l", "rec.glg"], cwd=tmp)
+        rc, out = run_cmd([autogrid, "-p", "rec.gpf", "-l", "rec.glg"], cwd=tmp)
         if not os.path.exists(os.path.join(tmp, "rec.e.map")):
             glg = open(os.path.join(tmp, "rec.glg"), errors="ignore").read() if os.path.exists(os.path.join(tmp, "rec.glg")) else out
             raise ValueError("autogrid4 falló: " + (glg.strip().splitlines() or ["?"])[-1][:150])
@@ -263,10 +263,10 @@ def preparar_mapas(P, diana_id, receptor, caja, tipos_lig, param):
 def correr_ad4(mapas, lig, salida, semilla, d):
     """Docking con autodock4 (LGA). Escribe la salida como PDBQT multi-modelo compatible con el resto
     del pipeline (REMARK minimizedAffinity = energía libre estimada de AD4)."""
-    autodock = herramienta("autodock4", ["~/tools/ADFRsuite-1.0/bin/autodock4"])
+    autodock = tool("autodock4", ["~/tools/ADFRsuite-1.0/bin/autodock4"])
     if not autodock:
         raise ValueError("autodock4 no está (viene con ADFRsuite: corre 'Docking entorno')")
-    tmp = en_tmp("ad4")
+    tmp = tmp_dir("ad4")
     try:
         for f in os.listdir(mapas):
             if f.endswith((".map", ".fld", ".xyz", ".dat")):
@@ -292,7 +292,7 @@ def correr_ad4(mapas, lig, salida, semilla, d):
                 "sw_lb_rho 0.01", "ls_search_freq 0.06", "set_psw1", "unbound_model bound", f"ga_run {runs}",
                 "analysis"]
         open(os.path.join(tmp, "lig.dpf"), "w").write("\n".join(dpf) + "\n")
-        rc, out = correr([autodock, "-p", "lig.dpf", "-l", "lig.dlg"], cwd=tmp)
+        rc, out = run_cmd([autodock, "-p", "lig.dpf", "-l", "lig.dlg"], cwd=tmp)
         dlg = os.path.join(tmp, "lig.dlg")
         poses = leer_dlg(dlg) if os.path.exists(dlg) else []
         open(salida[:-6] + ".log", "w").write("\n".join(dpf) + "\n\n" + out

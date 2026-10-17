@@ -2,23 +2,23 @@
 import os
 import re
 
-from comun import afinidad, completo, log, modelo1, pesados_pdbqt, titulo
+from common import affinity, is_complete, log, model1, heavy_atoms_pdbqt, title
 
 
-def ejecutar(P, rehacer=False):
-    titulo("6 · Resumen de afinidades")
+def run(P, rehacer=False):
+    title("6 · Resumen de afinidades")
     import pandas as pd
     filas = []
-    for diana in P.cfg["dianas"]:
-        for lig, ctrl in P.ligandos_para(diana["id"]):
-            for s in P.cfg["docking"]["semillas"]:
+    for diana in P.cfg["targets"]:
+        for lig, ctrl in P.ligands_for(diana["id"]):
+            for s in P.cfg["docking"]["seeds"]:
                 f = P.layout.result_pdbqt(diana["id"], lig["id"], s)
-                if not completo(f):
+                if not is_complete(f):
                     continue
-                lp = P.ligando_pdbqt(lig, ctrl)
-                filas.append(dict(diana=diana["id"], ligando=lig["id"], nombre=lig.get("nombre", lig["id"]),
-                                  tipo="control" if ctrl else "ligando", semilla=s, afinidad=afinidad(f),
-                                  n_pesados=pesados_pdbqt(lp) if os.path.exists(lp) else None, archivo=f))
+                lp = P.ligand_pdbqt(lig, ctrl)
+                filas.append(dict(diana=diana["id"], ligando=lig["id"], nombre=lig.get("name", lig["id"]),
+                                  tipo="control" if ctrl else "ligando", semilla=s, afinidad=affinity(f),
+                                  n_pesados=heavy_atoms_pdbqt(lp) if os.path.exists(lp) else None, archivo=f))
     if not filas:
         log("  Aún no hay resultados de docking.")
         return 0
@@ -38,7 +38,7 @@ def ejecutar(P, rehacer=False):
     mat = res.pivot(index="ligando", columns="diana", values="afinidad_media")
     mat.to_csv(P.layout.affinity_matrix_csv())
 
-    nombre_seguro = re.sub(r"[^A-Za-z0-9._-]+", "_", P.cfg["nombre"])
+    nombre_seguro = re.sub(r"[^A-Za-z0-9._-]+", "_", P.cfg["name"])
     xlsx_path = P.layout.affinities_xlsx(nombre_seguro)
     try:
         with pd.ExcelWriter(xlsx_path) as xw:
@@ -55,7 +55,7 @@ def ejecutar(P, rehacer=False):
     # mejor pose de cada par → BestPoses/<diana>__<ligando>.pdbqt
     mejores = df.loc[df.groupby(["diana", "ligando"])["afinidad"].idxmin()]
     for r in mejores.itertuples():
-        open(P.layout.best_pose_pdbqt(r.diana, r.ligando), "w").write(modelo1(r.archivo))
+        open(P.layout.best_pose_pdbqt(r.diana, r.ligando), "w").write(model1(r.archivo))
 
     for diana, g in res.groupby("diana", sort=False):
         log(f"\n  ▸ {diana}")
