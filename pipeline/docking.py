@@ -1,4 +1,12 @@
-"""Pasos 'redocking' y 'docking' con smina. Reanudables: lo que ya tiene salida completa se salta."""
+"""Pasos 'redocking' y 'docking' con smina. Reanudables: lo que ya tiene salida completa se salta.
+
+Fase 6: las corridas ya no son estrictamente secuenciales. `axd.tuning.plan()` decide
+cuántas corridas van en paralelo y con cuántos núcleos cada una (según el hardware
+detectado y lo que pida el proyecto), y `axd.thermal.ThermalGuard` se consulta entre
+lanzamientos para frenar (THROTTLE) o dejar de lanzar corridas nuevas (PAUSE) si la
+CPU/GPU se calienta demasiado. El guardia nunca interrumpe un smina/AutoDock4 en
+curso (no se puede); sólo decide si se lanza la siguiente corrida."""
+import concurrent.futures as cf
 import csv
 import os
 import shutil
@@ -7,6 +15,7 @@ import time
 import numpy as np
 
 from comun import afinidad, completo, correr, en_tmp, herramienta, log, pose1_pdb, titulo
+from axd.thermal import Decision
 
 
 def _smina():
@@ -107,6 +116,70 @@ class Motor:
         return e, False
 
 
+# ---------------------------------------------------------------- Fase 6: paralelización real
+def _plan_recursos(P, n_jobs):
+    """Hardware detectado + plan de concurrencia (axd.tuning) + guardia térmica (axd.thermal)
+    para esta corrida del pipeline. `n_jobs` es el número de corridas pendientes: el plan
+    no crea más trabajadores que trabajo por hacer."""
+    from axd import hardware as HW, tuning
+    from axd.config import cargar_global
+    hw = HW.detect()
+    g = cargar_global()
+    pol = tuning.ThermalPolicy.from_config(g.get("thermal"))
+    cpu_pedido = int(P.cfg["docking"].get("cpu") or 0) or None
+    rp = tuning.plan(hw, n_jobs=max(1, n_jobs), cpu_per_worker=cpu_pedido)
+    from axd.thermal import ThermalGuard
+    return rp, ThermalGuard(pol)
+
+
+def _limite_por_estado(decision, max_workers):
+    """Cuántas corridas pueden estar en vuelo a la vez según la última lectura térmica."""
+    if decision == Decision.PAUSE:
+        return 0
+    if decision == Decision.THROTTLE:
+        return max(1, max_workers // 2)
+    return max_workers
+
+
+def _log_plan(rp, etiqueta_motor):
+    log(f"  Paralelismo: {rp.max_workers} corrida(s) a la vez × {rp.cpu_per_worker} núcleo(s) cada una"
+        + (f" · {rp.reserved_cores} núcleo(s) libre(s)" if rp.reserved_cores else "") + f" · {etiqueta_motor}")
+    for n in rp.notes:
+        log(f"  {n}")
+
+
+def _ejecutar_en_pool(jobs, ejecutar_uno, rp, guard):
+    """Corre `ejecutar_uno(job)` para cada job en `jobs` respetando el plan de concurrencia
+    y el seguro térmico. Entrega (job, resultado) EN ORDEN DE TERMINACIÓN (no en el orden
+    de la lista): con corridas en paralelo, no hay forma de preservar el orden original sin
+    desperdiciar paralelismo. Nunca cancela una corrida de smina/AutoDock4 en curso; sólo
+    decide si se lanza la siguiente."""
+    max_workers = max(1, rp.max_workers)
+    poll = max(1, int(getattr(guard.policy, "poll_seconds", 10)))
+    idx, futuros, decision_previa = 0, {}, None
+    with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        while idx < len(jobs) or futuros:
+            lectura = guard.read()
+            if lectura.decision is not decision_previa and lectura.reason:
+                log(f"  {lectura.reason}")
+            decision_previa = lectura.decision
+            limite = _limite_por_estado(lectura.decision, max_workers)
+            while idx < len(jobs) and len(futuros) < limite:
+                job = jobs[idx]; idx += 1
+                futuros[ex.submit(ejecutar_uno, job)] = job
+            if not futuros:
+                time.sleep(poll); continue
+            listos, _ = cf.wait(futuros.keys(), timeout=poll, return_when=cf.FIRST_COMPLETED)
+            for fut in listos:
+                job = futuros.pop(fut)
+                try:
+                    resultado = fut.result()
+                except Exception as ex_:  # noqa: BLE001
+                    log(f"      ✘ error inesperado: {ex_}")
+                    resultado = (None, False)
+                yield job, resultado
+
+
 def redocking(P, rehacer=False):
     titulo("4 · Validación por redocking")
     from ligandos import preparar_ref_redocking
@@ -115,7 +188,9 @@ def redocking(P, rehacer=False):
     motor = Motor(P, todos)
     if not motor.disponible():
         return 1
-    filas, fallos = [], 0
+    fallos = 0
+    # ---- preparación por diana (I/O + RDKit: se queda secuencial, no es el cuello de botella)
+    preparadas = []
     for diana in P.cfg["dianas"]:
         if diana.get("caja", {}).get("modo") != "ligando":
             continue
@@ -128,19 +203,35 @@ def redocking(P, rehacer=False):
             log(f"  ✘ {diana['id']}: no pude preparar el ligando cristalográfico ({e})")
         if not lig:
             fallos += 1; continue
-        log(f"\n  ▸ {diana['id']} · ligando {diana['caja']['ref']}")
-        for s in d["semillas"]:
-            sal = P.layout.redocking_result_pdbqt(diana["id"], s)
-            e, previa = motor.dockear(diana["id"], P.receptor_pdbqt(diana), lig, cajas[diana["id"]], sal, s, d, rehacer)
-            r = None
-            if e is not None:
-                try:
-                    r = rmsd_simetrico(sal, ref)
-                except Exception as ex:  # noqa: BLE001
-                    log(f"      ⚠ RMSD no calculado: {str(ex)[:90]}")
-            log(f"    semilla {s:>6}: {e if e is not None else 'NA':>7} kcal/mol   RMSD = "
-                f"{('%.2f Å' % r) if r is not None else 'NA'}{'  (previa)' if previa else ''}")
-            filas.append(dict(diana=diana["id"], semilla=s, afinidad=e, rmsd=None if r is None else round(r, 3)))
+        preparadas.append((diana, lig, ref))
+
+    jobs = [{"diana": diana, "lig": lig, "s": s, "sal": P.layout.redocking_result_pdbqt(diana["id"], s)}
+            for diana, lig, ref in preparadas for s in d["semillas"]]
+    rp, guard = _plan_recursos(P, len(jobs) or 1)
+    if jobs:
+        _log_plan(rp, motor.etiqueta(d))
+
+    def _correr_redocking(job):
+        return motor.dockear(job["diana"]["id"], P.receptor_pdbqt(job["diana"]), job["lig"],
+                              cajas[job["diana"]["id"]], job["sal"], job["s"], d, rehacer)
+
+    refs = {diana["id"]: ref for diana, lig, ref in preparadas}
+    dianas_con_encabezado = set()
+    filas = []
+    for job, (e, previa) in _ejecutar_en_pool(jobs, _correr_redocking, rp, guard):
+        diana = job["diana"]
+        if diana["id"] not in dianas_con_encabezado:
+            dianas_con_encabezado.add(diana["id"])
+            log(f"\n  ▸ {diana['id']} · ligando {diana['caja']['ref']}")
+        r = None
+        if e is not None:
+            try:
+                r = rmsd_simetrico(job["sal"], refs[diana["id"]])
+            except Exception as ex:  # noqa: BLE001
+                log(f"      ⚠ RMSD no calculado: {str(ex)[:90]}")
+        log(f"    semilla {job['s']:>6}: {e if e is not None else 'NA':>7} kcal/mol   RMSD = "
+            f"{('%.2f Å' % r) if r is not None else 'NA'}{'  (previa)' if previa else ''}")
+        filas.append(dict(diana=diana["id"], semilla=job["s"], afinidad=e, rmsd=None if r is None else round(r, 3)))
     if not filas:
         log("  (ninguna diana tiene caja definida por ligando co-cristalizado)")
         return fallos
@@ -190,30 +281,50 @@ def matriz(P, rehacer=False):
                  if completo(P.layout.result_pdbqt(di["id"], lig["id"], s))) if not rehacer else 0
     log(f"  {len(trabajo)} pares ligando–diana × {len(d['semillas'])} semillas = {total} corridas "
         f"({hechas} ya hechas) · {motor.etiqueta(d)}")
-    t0, nuevas, fallos, actual = time.time(), 0, 0, None
+
+    jobs = []
     for diana, rec, lig, lp, ctrl in trabajo:
-        if diana["id"] != actual:
-            actual = diana["id"]
-            c = cajas[actual]
-            log(f"\n  ▸ {actual}   centro {c['center']}  caja {c['size']}")
-        es = []
+        dd = d
+        if P.cfg.get("modo") == "basico" and cajas[diana["id"]].get("modo") == "ciego":
+            dd = dict(d, exhaustiveness=max(int(d["exhaustiveness"]), 64))  # ciego necesita más búsqueda
         for s in d["semillas"]:
             sal = P.layout.result_pdbqt(diana["id"], lig["id"], s)
-            dd = d
-            if P.cfg.get("modo") == "basico" and cajas[diana["id"]].get("modo") == "ciego":
-                dd = dict(d, exhaustiveness=max(int(d["exhaustiveness"]), 64))  # ciego necesita más búsqueda
-            e, previa = motor.dockear(diana["id"], rec, lp, cajas[diana["id"]], sal, s, dd, rehacer)
-            if e is None:
-                fallos += 1
-            else:
-                es.append(e)
-                if not previa:
-                    nuevas += 1; hechas += 1
-        if es:
-            eta = ""
-            if nuevas:
-                seg = (time.time() - t0) / nuevas * (total - hechas)
-                eta = f"  ·  {hechas}/{total}  ·  faltan ~{seg / 3600:.1f} h" if seg > 3600 else f"  ·  {hechas}/{total}  ·  faltan ~{seg / 60:.0f} min"
-            log(f"    {lig['id'][:40]:40s} {np.mean(es):7.2f} ± {np.std(es):4.2f} kcal/mol{'  [control]' if ctrl else ''}{eta}")
+            jobs.append({"diana": diana, "rec": rec, "lig": lig, "lp": lp, "ctrl": ctrl, "s": s, "sal": sal, "dd": dd})
+
+    rp, guard = _plan_recursos(P, (total - hechas) or 1)
+    if total:
+        _log_plan(rp, motor.etiqueta(d))
+
+    def _correr_matriz(job):
+        dd = dict(job["dd"], cpu=rp.cpu_per_worker)
+        return motor.dockear(job["diana"]["id"], job["rec"], job["lp"], cajas[job["diana"]["id"]],
+                              job["sal"], job["s"], dd, rehacer)
+
+    restantes = {(diana["id"], lig["id"]): len(d["semillas"]) for diana, rec, lig, lp, ctrl in trabajo}
+    acumulado = {clave: [] for clave in restantes}
+    dianas_con_encabezado = set()
+    t0, nuevas, fallos = time.time(), 0, 0
+    for job, (e, previa) in _ejecutar_en_pool(jobs, _correr_matriz, rp, guard):
+        diana, lig, ctrl = job["diana"], job["lig"], job["ctrl"]
+        if diana["id"] not in dianas_con_encabezado:
+            dianas_con_encabezado.add(diana["id"])
+            c = cajas[diana["id"]]
+            log(f"\n  ▸ {diana['id']}   centro {c['center']}  caja {c['size']}")
+        clave = (diana["id"], lig["id"])
+        if e is None:
+            fallos += 1
+        else:
+            acumulado[clave].append(e)
+            if not previa:
+                nuevas += 1; hechas += 1
+        restantes[clave] -= 1
+        if restantes[clave] == 0:
+            es = acumulado[clave]
+            if es:
+                eta = ""
+                if nuevas:
+                    seg = (time.time() - t0) / nuevas * (total - hechas)
+                    eta = f"  ·  {hechas}/{total}  ·  faltan ~{seg / 3600:.1f} h" if seg > 3600 else f"  ·  {hechas}/{total}  ·  faltan ~{seg / 60:.0f} min"
+                log(f"    {lig['id'][:40]:40s} {np.mean(es):7.2f} ± {np.std(es):4.2f} kcal/mol{'  [control]' if ctrl else ''}{eta}")
     log(f"\n  Docking terminado: {nuevas} corridas nuevas en {(time.time() - t0) / 60:.1f} min · {fallos} fallos")
     return fallos

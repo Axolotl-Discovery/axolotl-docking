@@ -83,25 +83,35 @@ class ResourcePlan:
     notes: list[str] = field(default_factory=list)   # Spanish UI strings
 
 
-def plan(hw, n_jobs: int | None = None, max_fraction: float = DEFAULT_MAX_FRACTION) -> ResourcePlan:
+def plan(hw, n_jobs: int | None = None, max_fraction: float = DEFAULT_MAX_FRACTION,
+         cpu_per_worker: int | None = None) -> ResourcePlan:
     """Choose worker count and cores-per-worker from the detected hardware.
 
     Heuristic: Vina/smina scale well up to the physical core count and poorly on
     hyperthreads, and with many jobs several smaller workers beat one big worker.
     Memory and (optionally) the number of pending jobs cap the worker count.
+
+    `cpu_per_worker`, when given, overrides the auto-sized thread count (e.g. the
+    project's own `docking.cpu` setting): the budget is then split into that many
+    cores per worker instead of the usual heuristic target.
     """
     usable = max(1, int(getattr(hw, "usable_cores", 1)))
     budget = core_budget(usable, max_fraction)
     notes: list[str] = []
 
-    # Target threads per worker: enough to be efficient, small enough that
-    # several jobs run at once (Vina/smina scale sublinearly past a few threads).
-    target = 4 if budget >= 4 else (2 if budget >= 2 else 1)
+    if cpu_per_worker:
+        # Respect the explicit per-job core count, never exceeding the budget.
+        cpu_per_worker = max(1, min(int(cpu_per_worker), budget))
+        max_workers = max(1, budget // cpu_per_worker)
+    else:
+        # Target threads per worker: enough to be efficient, small enough that
+        # several jobs run at once (Vina/smina scale sublinearly past a few threads).
+        target = 4 if budget >= 4 else (2 if budget >= 2 else 1)
 
-    # Spend the whole budget: pick the worker count, then split cores evenly so
-    # no core sits idle (e.g. 7 -> 1x7 would waste nothing; 14 -> 3x4+... ).
-    max_workers = max(1, budget // target)
-    cpu_per_worker = max(1, budget // max_workers)
+        # Spend the whole budget: pick the worker count, then split cores evenly so
+        # no core sits idle (e.g. 7 -> 1x7 would waste nothing; 14 -> 3x4+... ).
+        max_workers = max(1, budget // target)
+        cpu_per_worker = max(1, budget // max_workers)
 
     # memory guard
     mem_avail = int(getattr(hw, "mem_available_mb", 0) or 0)
