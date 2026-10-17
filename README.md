@@ -138,6 +138,22 @@ mi_proyecto/
 
 ---
 
+## Pruebas automatizadas
+
+Hay una suite de pruebas (`pytest`) en `tests/` que cubre la lógica que no depende de
+herramientas externas (smina, ADFRsuite, RDKit real): el modelo de dominio tipado,
+las fuentes y cajas polimórficas, el plan de recursos y el seguro térmico, y la
+paralelización real del docking. No requiere el entorno conda completo:
+
+```
+pip install pytest
+pytest
+```
+
+Lo que necesita binarios/paquetes reales (smina, ADFRsuite, RDKit, Open Babel) se sigue
+verificando a mano, corriendo el pipeline sobre un proyecto de prueba dentro del entorno
+conda (`env/environment.yml`, que ya incluye `pytest` para correr la suite ahí también).
+
 ## Notas
 
 - El docking corre en segundo plano: puedes cerrar el menú, pero **deja abierta (minimizada) una terminal de WSL**; si se cierran todas, Windows puede apagar WSL.

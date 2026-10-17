@@ -34,6 +34,7 @@ dependencies:
   - ipykernel
   - tqdm
   - pyyaml
+  - pytest
   - vina
   - meeko
   - pip

@@ -207,9 +207,6 @@ def redocking(P, rehacer=False):
 
     jobs = [{"diana": diana, "lig": lig, "s": s, "sal": P.layout.redocking_result_pdbqt(diana["id"], s)}
             for diana, lig, ref in preparadas for s in d["semillas"]]
-    rp, guard = _plan_recursos(P, len(jobs) or 1)
-    if jobs:
-        _log_plan(rp, motor.etiqueta(d))
 
     def _correr_redocking(job):
         return motor.dockear(job["diana"]["id"], P.receptor_pdbqt(job["diana"]), job["lig"],
@@ -218,20 +215,24 @@ def redocking(P, rehacer=False):
     refs = {diana["id"]: ref for diana, lig, ref in preparadas}
     dianas_con_encabezado = set()
     filas = []
-    for job, (e, previa) in _ejecutar_en_pool(jobs, _correr_redocking, rp, guard):
-        diana = job["diana"]
-        if diana["id"] not in dianas_con_encabezado:
-            dianas_con_encabezado.add(diana["id"])
-            log(f"\n  ▸ {diana['id']} · ligando {diana['caja']['ref']}")
-        r = None
-        if e is not None:
-            try:
-                r = rmsd_simetrico(job["sal"], refs[diana["id"]])
-            except Exception as ex:  # noqa: BLE001
-                log(f"      ⚠ RMSD no calculado: {str(ex)[:90]}")
-        log(f"    semilla {job['s']:>6}: {e if e is not None else 'NA':>7} kcal/mol   RMSD = "
-            f"{('%.2f Å' % r) if r is not None else 'NA'}{'  (previa)' if previa else ''}")
-        filas.append(dict(diana=diana["id"], semilla=job["s"], afinidad=e, rmsd=None if r is None else round(r, 3)))
+    if jobs:
+        rp, guard = _plan_recursos(P, len(jobs))
+        _log_plan(rp, motor.etiqueta(d))
+        for job, (e, previa) in _ejecutar_en_pool(jobs, _correr_redocking, rp, guard):
+            diana = job["diana"]
+            if diana["id"] not in dianas_con_encabezado:
+                dianas_con_encabezado.add(diana["id"])
+                log(f"\n  ▸ {diana['id']} · ligando {diana['caja']['ref']}")
+            r = None
+            if e is not None:
+                try:
+                    r = rmsd_simetrico(job["sal"], refs[diana["id"]])
+                except Exception as ex:  # noqa: BLE001
+                    log(f"      ⚠ RMSD no calculado: {str(ex)[:90]}")
+            log(f"    semilla {job['s']:>6}: {e if e is not None else 'NA':>7} kcal/mol   RMSD = "
+                f"{('%.2f Å' % r) if r is not None else 'NA'}{'  (previa)' if previa else ''}")
+            filas.append(dict(diana=diana["id"], semilla=job["s"], afinidad=e,
+                               rmsd=None if r is None else round(r, 3)))
     if not filas:
         log("  (ninguna diana tiene caja definida por ligando co-cristalizado)")
         return fallos
@@ -291,11 +292,7 @@ def matriz(P, rehacer=False):
             sal = P.layout.result_pdbqt(diana["id"], lig["id"], s)
             jobs.append({"diana": diana, "rec": rec, "lig": lig, "lp": lp, "ctrl": ctrl, "s": s, "sal": sal, "dd": dd})
 
-    rp, guard = _plan_recursos(P, (total - hechas) or 1)
-    if total:
-        _log_plan(rp, motor.etiqueta(d))
-
-    def _correr_matriz(job):
+    def _correr_matriz(job, rp):
         dd = dict(job["dd"], cpu=rp.cpu_per_worker)
         return motor.dockear(job["diana"]["id"], job["rec"], job["lp"], cajas[job["diana"]["id"]],
                               job["sal"], job["s"], dd, rehacer)
@@ -304,27 +301,32 @@ def matriz(P, rehacer=False):
     acumulado = {clave: [] for clave in restantes}
     dianas_con_encabezado = set()
     t0, nuevas, fallos = time.time(), 0, 0
-    for job, (e, previa) in _ejecutar_en_pool(jobs, _correr_matriz, rp, guard):
-        diana, lig, ctrl = job["diana"], job["lig"], job["ctrl"]
-        if diana["id"] not in dianas_con_encabezado:
-            dianas_con_encabezado.add(diana["id"])
-            c = cajas[diana["id"]]
-            log(f"\n  ▸ {diana['id']}   centro {c['center']}  caja {c['size']}")
-        clave = (diana["id"], lig["id"])
-        if e is None:
-            fallos += 1
-        else:
-            acumulado[clave].append(e)
-            if not previa:
-                nuevas += 1; hechas += 1
-        restantes[clave] -= 1
-        if restantes[clave] == 0:
-            es = acumulado[clave]
-            if es:
-                eta = ""
-                if nuevas:
-                    seg = (time.time() - t0) / nuevas * (total - hechas)
-                    eta = f"  ·  {hechas}/{total}  ·  faltan ~{seg / 3600:.1f} h" if seg > 3600 else f"  ·  {hechas}/{total}  ·  faltan ~{seg / 60:.0f} min"
-                log(f"    {lig['id'][:40]:40s} {np.mean(es):7.2f} ± {np.std(es):4.2f} kcal/mol{'  [control]' if ctrl else ''}{eta}")
+    if jobs:
+        rp, guard = _plan_recursos(P, total - hechas)
+        _log_plan(rp, motor.etiqueta(d))
+        for job, (e, previa) in _ejecutar_en_pool(jobs, lambda j: _correr_matriz(j, rp), rp, guard):
+            diana, lig, ctrl = job["diana"], job["lig"], job["ctrl"]
+            if diana["id"] not in dianas_con_encabezado:
+                dianas_con_encabezado.add(diana["id"])
+                c = cajas[diana["id"]]
+                log(f"\n  ▸ {diana['id']}   centro {c['center']}  caja {c['size']}")
+            clave = (diana["id"], lig["id"])
+            if e is None:
+                fallos += 1
+            else:
+                acumulado[clave].append(e)
+                if not previa:
+                    nuevas += 1; hechas += 1
+            restantes[clave] -= 1
+            if restantes[clave] == 0:
+                es = acumulado[clave]
+                if es:
+                    eta = ""
+                    if nuevas:
+                        seg = (time.time() - t0) / nuevas * (total - hechas)
+                        eta = (f"  ·  {hechas}/{total}  ·  faltan ~{seg / 3600:.1f} h" if seg > 3600
+                               else f"  ·  {hechas}/{total}  ·  faltan ~{seg / 60:.0f} min")
+                    log(f"    {lig['id'][:40]:40s} {np.mean(es):7.2f} ± {np.std(es):4.2f} kcal/mol"
+                        f"{'  [control]' if ctrl else ''}{eta}")
     log(f"\n  Docking terminado: {nuevas} corridas nuevas en {(time.time() - t0) / 60:.1f} min · {fallos} fallos")
     return fallos
