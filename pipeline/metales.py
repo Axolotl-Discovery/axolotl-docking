@@ -156,22 +156,27 @@ def _base_ad4():
     """Archivo de parámetros AD4.1 oficial: el de ADFRsuite, uno ya descargado, o se baja del repositorio
     oficial de AutoDock4 (ccsb-scripps/AutoDock4)."""
     cache = os.path.expanduser("~/.config/axolotl-docking/AD4.1_bound.dat")
-    for base in (os.path.expanduser("~/tools/ADFRsuite-1.0"),
-                 os.path.dirname(os.path.dirname(herramienta("autodock4") or "/x/y"))):
+    ad4_bin = herramienta("autodock4")
+    candidatos = [os.path.expanduser("~/tools/ADFRsuite-1.0")]
+    if ad4_bin:
+        candidatos.append(os.path.dirname(os.path.dirname(ad4_bin)))
+    for base in candidatos:
+        if not os.path.isdir(base):  # sin esto, autodock4 no encontrado → glob recursivo desde "/"
+            continue
         for nombre in ("AD4.1_bound.dat", "AD4_parameters.dat"):
             r = glob.glob(os.path.join(base, "**", nombre), recursive=True)
             if r:
                 return r[0]
     if os.path.exists(cache):
         return cache
+    from axd.infra import net
     try:
-        import urllib.request
-        with urllib.request.urlopen(URL_AD4, timeout=30) as r:
-            datos = r.read()
-        if b"atom_par OA" in datos:
-            os.makedirs(os.path.dirname(cache), exist_ok=True)
-            open(cache, "wb").write(datos)
-            return cache
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        net.bajar(URL_AD4, cache, timeout=30, intentos=1)
+        if b"atom_par OA" not in open(cache, "rb").read():
+            os.remove(cache)
+            return None
+        return cache
     except Exception:  # noqa: BLE001
         pass
     return None

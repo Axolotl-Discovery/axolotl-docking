@@ -181,12 +181,12 @@ def preparar_ref_redocking(P, d):
     ref = None
     if not os.path.exists(P.ref_sdf(d)) and d.get("pdb") and d.get("caja", {}).get("ref"):
         # (modo básico: el ligando se eligió después de 'descargar') — SDF con órdenes de enlace de RCSB
-        from descargar import _bajar
+        from axd.infra import net
         res, cad = (d["caja"]["ref"].split(":") + [""])[:2]
         for u in (f"https://models.rcsb.org/v1/{d['pdb']}/ligand?auth_comp_id={res}&auth_asym_id={cad}&encoding=sdf",
                   f"https://models.rcsb.org/v1/{d['pdb']}/ligand?auth_comp_id={res}&encoding=sdf"):
             try:
-                _bajar(u, P.ref_sdf(d), intentos=2); break
+                net.bajar(u, P.ref_sdf(d), intentos=2); break
             except IOError:
                 continue
     if os.path.exists(P.ref_sdf(d)):
