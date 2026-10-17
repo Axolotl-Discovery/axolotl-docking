@@ -6,7 +6,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from axd import config as C  # noqa: E402
-from axd import entorno, hardware_report, layout, proyecto, resultados, runner, ui  # noqa: E402
+from axd import entorno, hardware_report, layout, resultados, runner, ui  # noqa: E402
+from axd.wizards import nuevo, resumen  # noqa: E402
 
 AYUDA = f"""
 {ui.negrita('Docking')} — Axolotl Discovery  (v{C.VERSION})
@@ -65,7 +66,7 @@ def elegir_proyecto(arg=None, preguntar=True):
 
 def menu_correr(proy):
     p = C.cargar_proyecto(proy)
-    proyecto.resumen_proyecto(proy, p)
+    resumen.resumen_proyecto(proy, p)
     if not p["dianas"]:
         ui.aviso("Primero añade al menos una diana (Editar proyecto).")
         return
@@ -152,12 +153,12 @@ def menu_principal():
 
 def despachar(op, arg, interactivo=False):
     if op == "nuevo":
-        ruta = proyecto.asistente_nuevo()
+        ruta = nuevo.asistente_nuevo()
         if ruta:
             menu_correr(ruta)
     elif op == "abrir":
         r = elegir_proyecto(arg)
-        r and proyecto.editar_proyecto(r)
+        r and resumen.editar_proyecto(r)
     elif op == "correr":
         r = elegir_proyecto(arg)
         r and menu_correr(r)

@@ -2,60 +2,10 @@
 import json
 import os
 import time
-import urllib.parse
 import urllib.request
 
 from comun import log, titulo
-
-UA = {"User-Agent": "axolotl-docking"}
-
-
-def _bajar(url, destino, timeout=90, intentos=3):
-    ultimo = None
-    for i in range(intentos):
-        try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
-                datos = r.read()
-            if not datos.strip():
-                raise IOError("vacío")
-            open(destino, "wb").write(datos)
-            return True
-        except Exception as e:  # noqa: BLE001
-            ultimo = e
-            if getattr(e, "code", None) == 404:
-                break
-            time.sleep(1.5 * (i + 1))
-    raise IOError(str(ultimo))
-
-
-def _pubchem(consulta, destino_base):
-    """Descarga SDF 3D (o 2D si no hay 3D). Acepta nombre, CID ('5280343', 'CID 5280343')
-    o SID de sustancia ('SID 482105756'): el SID se traduce a su CID estandarizado."""
-    from axd.proyecto import interpretar_pubchem
-    pug = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
-    tipo, v = interpretar_pubchem(consulta)
-    if tipo == "sid":
-        cid = None
-        try:
-            with urllib.request.urlopen(urllib.request.Request(f"{pug}/substance/sid/{v}/cids/TXT", headers=UA),
-                                        timeout=30) as r:
-                cid = (r.read().decode().split() or [None])[0]
-        except Exception:  # noqa: BLE001
-            cid = None
-        if not cid:  # sustancia sin compuesto estandarizado: se usa el registro de la sustancia
-            _bajar(f"{pug}/substance/sid/{v}/SDF", destino_base + ".sdf")
-            return destino_base + ".sdf", f"sustancia SID {v} (se generará 3D con RDKit)"
-        tipo, v = "cid", cid
-    if tipo == "cid":
-        base = f"{pug}/compound/cid/{v}/SDF"
-    else:
-        base = f"{pug}/compound/name/{urllib.parse.quote(v)}/SDF"
-    try:
-        _bajar(base + "?record_type=3d", destino_base + ".sdf")
-        return destino_base + ".sdf", "3D"
-    except IOError:
-        _bajar(base + "?record_type=2d", destino_base + ".sdf")
-        return destino_base + ".sdf", "2D (se generará 3D con RDKit)"
+from axd.infra import net
 
 
 def ejecutar(P, rehacer=False):
@@ -71,7 +21,7 @@ def ejecutar(P, rehacer=False):
             for ext in ("pdb", "cif"):
                 dest = os.path.join(crudos, f"{d['id']}.{ext}")
                 try:
-                    _bajar(f"https://files.rcsb.org/download/{d['pdb']}.{ext}", dest)
+                    net.bajar(f"https://files.rcsb.org/download/{d['pdb']}.{ext}", dest, intentos=3)
                     d["archivo"] = P.rel(dest); ok = True
                     log(f"  ✔ {d['id']}: RCSB {d['pdb']}.{ext}")
                     break
@@ -84,7 +34,7 @@ def ejecutar(P, rehacer=False):
             try:
                 with urllib.request.urlopen(f"https://alphafold.ebi.ac.uk/api/prediction/{d['uniprot']}", timeout=60) as r:
                     info = json.load(r)[0]
-                _bajar(info["pdbUrl"], dest)
+                net.bajar(info["pdbUrl"], dest, intentos=3)
                 d["archivo"] = P.rel(dest)
                 log(f"  ✔ {d['id']}: AlphaFold {d['uniprot']}")
             except Exception as e:  # noqa: BLE001
@@ -103,7 +53,7 @@ def ejecutar(P, rehacer=False):
                     f"https://models.rcsb.org/v1/{d['pdb']}/ligand?auth_comp_id={res}&encoding=sdf"]
             for u in urls:
                 try:
-                    _bajar(u, dest, intentos=2)
+                    net.bajar(u, dest, intentos=2)
                     log(f"    ✔ ligando cristalográfico {caja['ref']} (SDF con enlaces)")
                     break
                 except IOError:
@@ -119,7 +69,7 @@ def ejecutar(P, rehacer=False):
                 dest = os.path.join(carpeta, l["id"] + ".sdf")
                 for suf, desc in (("ideal", "coordenadas ideales"), ("model", "coordenadas de un cristal")):
                     try:
-                        _bajar(f"https://files.rcsb.org/ligands/download/{l['codigo']}_{suf}.sdf", dest, intentos=2)
+                        net.bajar(f"https://files.rcsb.org/ligands/download/{l['codigo']}_{suf}.sdf", dest, intentos=2)
                         l["archivo"] = P.rel(dest)
                         log(f"  ✔ {l['id']}: componente PDB {l['codigo']} ({desc})")
                         break
@@ -134,7 +84,7 @@ def ejecutar(P, rehacer=False):
                 log(f"  = {l['id']}: {l['archivo']}")
                 continue
             try:
-                ruta, tipo = _pubchem(str(l.get("cid") or l["consulta"]), os.path.join(carpeta, l["id"]))
+                ruta, tipo = net.pubchem_sdf(str(l.get("cid") or l["consulta"]), os.path.join(carpeta, l["id"]))
                 l["archivo"] = P.rel(ruta)
                 log(f"  ✔ {l['id']}: PubChem '{l['consulta']}' {tipo}")
             except IOError as e:

@@ -60,7 +60,7 @@ def _spec(texto):
 
 def _resolver_auto(d, crudo):
     """Modo básico: decide cadena, cofactores y caja a partir de la estructura."""
-    from axd.proyecto import COFACTORES, METALES, decision_auto, inspeccionar_pdb
+    from axd.infra.pdb import COFACTORES, METALES, decision_auto, inspeccionar_pdb
     cads, het = inspeccionar_pdb(crudo)
     ref, cad = decision_auto(het, cads)
     if d.get("cadenas") == "auto":
