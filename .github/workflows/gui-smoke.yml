@@ -1,0 +1,50 @@
+name: GUI smoke test (Linux/macOS/Windows)
+
+# Verifica rápido que el paquete axd.gui (PySide6) arranca igual en los tres
+# sistemas operativos que soporta Qt. No prueba el pipeline de docking en sí
+# (eso sigue siendo Linux/WSL-only: smina y ADFRsuite no tienen build de Mac
+# en este repo) — sólo que la ventana, las 6 pestañas y los servicios nuevos
+# de la GUI (axd/gui/services) importan y corren sin un entorno gráfico real.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["refactor/hardware-and-layout"]
+    paths:
+      - "axd/gui/**"
+      - "axd/**.py"
+      - "tests/**"
+      - ".github/workflows/gui-smoke.yml"
+  pull_request:
+    paths:
+      - "axd/gui/**"
+      - "axd/**.py"
+      - "tests/**"
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias (sólo lo que necesita la GUI + pytest)
+        run: python -m pip install --upgrade pip pyside6 pytest
+
+      - name: Compilar axd/gui (chequeo de sintaxis)
+        shell: bash
+        run: python -m compileall -q axd/gui
+
+      - name: Suite de pytest existente (no necesita conda/smina/ADFRsuite)
+        run: python -m pytest -q
+
+      - name: Smoke test de la GUI (ventana + 6 pestañas, offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tests/smoke_gui.py
