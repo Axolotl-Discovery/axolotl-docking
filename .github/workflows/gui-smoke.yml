@@ -34,8 +34,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Instalar dependencias (sólo lo que necesita la GUI + pytest)
-        run: python -m pip install --upgrade pip pyside6 pytest
+      - name: Instalar dependencias (GUI + pytest + lo mínimo que usan las pruebas sin conda)
+        run: python -m pip install --upgrade pip pyside6 pytest numpy
 
       - name: Compilar axd/gui (chequeo de sintaxis)
         shell: bash
