@@ -24,6 +24,7 @@ Uso:  Docking                    abre el menú interactivo
       Docking entorno            verificar / instalar conda, smina y ADFRsuite
       Docking hardware           ver el equipo (CPU, GPU, memoria) y la optimización sugerida
       Docking actualizar         bajar la última versión desde GitHub
+      Docking gui                abrir la interfaz gráfica (PySide6)
       Docking version | ayuda
 
 [carpeta] es opcional: si estás dentro de un proyecto se usa ese; si no, te pregunta.
@@ -141,6 +142,7 @@ def menu_principal():
             ("entorno", "Entorno: verificar / instalar / elegir"),
             ("hardware", "Hardware: ver equipo y optimización"),
             ("actualizar", "Actualizar Docking"),
+            ("gui", "Abrir la interfaz gráfica (PySide6)"),
         ], salir="Salir")
         try:
             if op is None:
@@ -197,6 +199,9 @@ def despachar(op, arg, interactivo=False):
         interactivo and ui.pausa()
     elif op == "actualizar":
         actualizar()
+    elif op == "gui":
+        from axd.gui.app import main as gui_main
+        return gui_main([])
     else:
         print(AYUDA)
 
@@ -204,7 +209,7 @@ def despachar(op, arg, interactivo=False):
 ALIAS = {"new": "nuevo", "crear": "nuevo", "editar": "abrir", "open": "abrir", "run": "correr", "pipeline": "correr",
          "status": "avance", "estado": "avance", "stop": "detener", "resume": "reanudar", "doctor": "entorno",
          "update": "actualizar", "logs": "log", "results": "resultados", "ver": "resultados",
-         "hw": "hardware", "equipo": "hardware"}
+         "hw": "hardware", "equipo": "hardware", "interfaz": "gui"}
 
 
 VIVO = False
@@ -229,7 +234,7 @@ def main(argv=None):
             entorno.doctor()
         elif op == "entorno" and arg == "instalar":
             entorno.instalar(argv[2:])
-        elif op in ("nuevo", "abrir", "correr", "resultados", "avance", "log", "detener", "reanudar", "entorno", "hardware", "actualizar"):
+        elif op in ("nuevo", "abrir", "correr", "resultados", "avance", "log", "detener", "reanudar", "entorno", "hardware", "actualizar", "gui"):
             despachar(op, arg)
         else:
             ui.error(f"No conozco el comando '{argv[0]}'.")

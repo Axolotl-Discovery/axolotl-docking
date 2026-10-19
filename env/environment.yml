@@ -37,6 +37,7 @@ dependencies:
   - pytest
   - vina
   - meeko
+  - pyside6
   - pip
   - pip:
       - plip

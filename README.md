@@ -58,7 +58,37 @@ Docking detener [carpeta]  detener el trabajo en segundo plano
 Docking reanudar[carpeta]  retomar donde se quedó (corte de luz, reinicio…)
 Docking entorno            verificar / instalar / elegir entorno conda
 Docking actualizar         bajar la última versión de GitHub
+Docking gui                abrir la interfaz gráfica de escritorio (PySide6)
 ```
+
+### Interfaz gráfica (GUI)
+
+Además del menú de terminal, hay una interfaz de escritorio (`Docking gui`, PySide6) con 6 pestañas —
+Proyecto, Análisis, Proceso, Visualización, Resultados y Entorno — que no duplica nada del pipeline:
+es una capa sobre el mismo `axd/` (mismo `axd.json`, mismo `axd.runner`, mismo `axd.entorno`). Agrega
+algunas cosas que el CLI no tenía:
+
+- **Checkpoints automáticos**: cada 10% de avance real se guarda una foto de `axd.json` + qué resultados
+  existen, en `.checkpoints/` dentro del proyecto (viaja con la carpeta). Se puede restaurar desde la
+  pestaña Proceso.
+- **Calibración de dispositivo**: en una máquina nueva, un benchmark corto (CPU, ~2s) ajusta la primera
+  estimación de tiempo; se afina solo con avance real una vez que el trabajo lleva corridas hechas.
+- **Perfil de cómputo**: *Estación de trabajo* (70-80% recomendado) o *Servidor* (hasta 95%), aplicado al
+  `cpu` de los parámetros de docking.
+- **Buscar diana por nombre**: usa la RCSB Search API para encontrar un PDB ID a partir de un nombre, con
+  un indicador explícito de "sin conexión a internet" para no confundirlo con un error de la app.
+- **Terminal acoplable/independiente**: el mismo `Docking abrir`/`correr` interactivo, dentro de la
+  ventana o suelto en su propia ventana del sistema, sin que afecte al trabajo en segundo plano.
+- **Auto-actualización**: envuelve `Docking actualizar` (git pull) con una pantalla de "hay una versión
+  nueva" en vez de tener que usar la terminal.
+
+Instalación (dentro del entorno conda, ya incluido en `env/environment.yml`):
+
+```bash
+pip install --break-system-packages pyside6   # si no viene ya del entorno conda
+Docking gui
+```
+
 
 Si estás dentro de la carpeta de un proyecto no hace falta poner `[carpeta]`. Las rutas se pueden pegar **como en Windows** (`C:\Users\Me\Desktop\...`) o arrastrando la carpeta a la terminal; TAB autocompleta.
 
