@@ -6,7 +6,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from axd import config as C  # noqa: E402
-from axd import entorno, proyecto, resultados, runner, ui  # noqa: E402
+from axd import entorno, hardware_report, layout, resultados, runner, ui  # noqa: E402
+from axd.wizards import new, summary  # noqa: E402
 
 AYUDA = f"""
 {ui.negrita('Docking')} — Axolotl Discovery  (v{C.VERSION})
@@ -21,7 +22,9 @@ Uso:  Docking                    abre el menú interactivo
       Docking detener [carpeta]  detener el trabajo en segundo plano
       Docking reanudar[carpeta]  retomar donde se quedó (p. ej. tras un corte de luz)
       Docking entorno            verificar / instalar conda, smina y ADFRsuite
+      Docking hardware           ver el equipo (CPU, GPU, memoria) y la optimización sugerida
       Docking actualizar         bajar la última versión desde GitHub
+      Docking gui                abrir la interfaz gráfica (PySide6)
       Docking version | ayuda
 
 [carpeta] es opcional: si estás dentro de un proyecto se usa ese; si no, te pregunta.
@@ -31,14 +34,14 @@ Uso:  Docking                    abre el menú interactivo
 def elegir_proyecto(arg=None, preguntar=True):
     if arg:
         r = ui.a_ruta_linux(arg)
-        if os.path.exists(os.path.join(r, C.ARCHIVO_PROYECTO)):
-            C.registrar_reciente(r)
+        if os.path.exists(os.path.join(r, C.PROJECT_FILE)):
+            C.register_recent(r)
             return r
         ui.error(f"No hay un proyecto (axd.json) en {r}")
         return None
-    aqui = C.buscar_proyecto()
-    g = C.cargar_global()
-    recientes = [x for x in g.get("recientes", []) if os.path.exists(os.path.join(x, C.ARCHIVO_PROYECTO))]
+    aqui = C.find_project()
+    g = C.load_global()
+    recientes = [x for x in g.get("recientes", []) if os.path.exists(os.path.join(x, C.PROJECT_FILE))]
     if aqui and not preguntar:
         return aqui
     ops = []
@@ -54,25 +57,25 @@ def elegir_proyecto(arg=None, preguntar=True):
             return None
     if sel == "__otra__":
         r = ui.preguntar_ruta("Carpeta del proyecto", tipo="carpeta")
-        if not os.path.exists(os.path.join(r, C.ARCHIVO_PROYECTO)):
+        if not os.path.exists(os.path.join(r, C.PROJECT_FILE)):
             ui.error("Esa carpeta no tiene axd.json. Crea el proyecto con 'Proyecto nuevo'.")
             return None
         sel = r
-    C.registrar_reciente(sel)
+    C.register_recent(sel)
     return sel
 
 
 def menu_correr(proy):
-    p = C.cargar_proyecto(proy)
-    proyecto.resumen_proyecto(proy, p)
-    if not p["dianas"]:
+    p = C.load_project(proy)
+    summary.resumen_proyecto(proy, p)
+    if not p["targets"]:
         ui.aviso("Primero añade al menos una diana (Editar proyecto).")
         return
-    if not p["ligandos"] and not p["controles"]:
+    if not p["ligands"] and not p["controls"]:
         ui.aviso("Primero añade ligandos (Editar proyecto).")
         return
-    hay_ref = any(d.get("caja", {}).get("modo") in ("ligando", "auto") for d in p["dianas"])
-    if p.get("modo") == "basico":
+    hay_ref = any(d.get("box", {}).get("mode") in ("ligand", "auto") for d in p["targets"])
+    if p.get("mode") == "basic":
         # modo básico: todo el pipeline, en segundo plano, sin preguntas
         if not ui.si_no("¿Arranco el docking completo ahora? (corre en segundo plano)", True):
             return
@@ -89,7 +92,7 @@ def menu_correr(proy):
     if op == "todo":
         pasos = [x for x in runner.PASOS if x != "redocking" or hay_ref]
     elif op == "prep":
-        pasos = ["descargar", "receptores", "ligandos"] + (["redocking"] if hay_ref else [])
+        pasos = ["download", "receptors", "ligands"] + (["redocking"] if hay_ref else [])
     else:
         pasos = []
         for x in runner.PASOS:
@@ -100,9 +103,10 @@ def menu_correr(proy):
     if not pasos:
         return
     extra = []
+    lay = layout.Layout(proy)
     if "docking" in pasos and any(
-            os.path.exists(os.path.join(proy, "04_Docking", "Resultados", d["id"])) and
-            os.listdir(os.path.join(proy, "04_Docking", "Resultados", d["id"])) for d in p["dianas"]):
+            os.path.exists(lay.target_results_dir(d["id"])) and
+            os.listdir(lay.target_results_dir(d["id"])) for d in p["targets"]):
         if ui.si_no("Hay resultados previos. ¿Rehacer TODO desde cero? (No = sólo lo que falta)", False):
             extra.append("--rehacer")
     largo = "docking" in pasos or "redocking" in pasos
@@ -122,8 +126,8 @@ def actualizar():
 
 def menu_principal():
     ui.banner(C.VERSION)
-    g = C.cargar_global()
-    if not C.ruta_conda(g) or g["entorno"] not in C.entornos_conda(C.ruta_conda(g)):
+    g = C.load_global()
+    if not C.conda_path(g) or g["entorno"] not in C.conda_environments(C.conda_path(g)):
         ui.aviso("El entorno de docking no está instalado o no lo encuentro → opción 'Entorno'.")
     while True:
         op = ui.menu("Menú principal", [
@@ -136,7 +140,9 @@ def menu_principal():
             ("detener", "Detener trabajo"),
             ("reanudar", "Reanudar trabajo"),
             ("entorno", "Entorno: verificar / instalar / elegir"),
+            ("hardware", "Hardware: ver equipo y optimización"),
             ("actualizar", "Actualizar Docking"),
+            ("gui", "Abrir la interfaz gráfica (PySide6)"),
         ], salir="Salir")
         try:
             if op is None:
@@ -149,12 +155,12 @@ def menu_principal():
 
 def despachar(op, arg, interactivo=False):
     if op == "nuevo":
-        ruta = proyecto.asistente_nuevo()
+        ruta = new.asistente_nuevo()
         if ruta:
             menu_correr(ruta)
     elif op == "abrir":
         r = elegir_proyecto(arg)
-        r and proyecto.editar_proyecto(r)
+        r and summary.editar_proyecto(r)
     elif op == "correr":
         r = elegir_proyecto(arg)
         r and menu_correr(r)
@@ -188,15 +194,22 @@ def despachar(op, arg, interactivo=False):
             entorno.instalar()
         elif sub == "elegir":
             entorno.elegir_entorno()
+    elif op == "hardware":
+        hardware_report.report(redetect=True)
+        interactivo and ui.pausa()
     elif op == "actualizar":
         actualizar()
+    elif op == "gui":
+        from axd.gui.app import main as gui_main
+        return gui_main([])
     else:
         print(AYUDA)
 
 
 ALIAS = {"new": "nuevo", "crear": "nuevo", "editar": "abrir", "open": "abrir", "run": "correr", "pipeline": "correr",
          "status": "avance", "estado": "avance", "stop": "detener", "resume": "reanudar", "doctor": "entorno",
-         "update": "actualizar", "logs": "log", "results": "resultados", "ver": "resultados"}
+         "update": "actualizar", "logs": "log", "results": "resultados", "ver": "resultados",
+         "hw": "hardware", "equipo": "hardware", "interfaz": "gui"}
 
 
 VIVO = False
@@ -221,7 +234,7 @@ def main(argv=None):
             entorno.doctor()
         elif op == "entorno" and arg == "instalar":
             entorno.instalar(argv[2:])
-        elif op in ("nuevo", "abrir", "correr", "resultados", "avance", "log", "detener", "reanudar", "entorno", "actualizar"):
+        elif op in ("nuevo", "abrir", "correr", "resultados", "avance", "log", "detener", "reanudar", "entorno", "hardware", "actualizar", "gui"):
             despachar(op, arg)
         else:
             ui.error(f"No conozco el comando '{argv[0]}'.")

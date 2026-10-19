@@ -58,7 +58,38 @@ Docking detener [carpeta]  detener el trabajo en segundo plano
 Docking reanudar[carpeta]  retomar donde se quedó (corte de luz, reinicio…)
 Docking entorno            verificar / instalar / elegir entorno conda
 Docking actualizar         bajar la última versión de GitHub
+Docking gui                abrir la interfaz gráfica de escritorio (PySide6)
 ```
+
+### Interfaz gráfica (GUI)
+
+Además del menú de terminal, hay una interfaz de escritorio (`Docking gui`, PySide6) con 6 pestañas —
+Proyecto, Análisis, Proceso, Visualización, Resultados y Entorno — que no duplica nada del pipeline:
+es una capa sobre el mismo `axd/` (mismo `axd.json`, mismo `axd.runner`, mismo `axd.entorno`). Agrega
+algunas cosas que el CLI no tenía:
+
+- **Checkpoints automáticos**: cada 10% de avance real se guarda una foto de `axd.json` + qué resultados
+  existen, en `.checkpoints/` dentro del proyecto (viaja con la carpeta). Se puede restaurar desde la
+  pestaña Proceso.
+- **Calibración de dispositivo**: en una máquina nueva, un benchmark corto (CPU, ~2s) ajusta la primera
+  estimación de tiempo; se afina solo con avance real una vez que el trabajo lleva corridas hechas.
+- **Perfil de cómputo**: *Estación de trabajo* (70-80% recomendado) o *Servidor* (hasta 95%), aplicado al
+  `cpu` de los parámetros de docking.
+- **Buscar diana por nombre**: usa la RCSB Search API para encontrar un PDB ID a partir de un nombre, con
+  un indicador explícito de "sin conexión a internet" para no confundirlo con un error de la app.
+- **Terminal acoplable/independiente**: el mismo `Docking abrir`/`correr` interactivo, dentro de la
+  ventana o suelto en su propia ventana del sistema, sin que afecte al trabajo en segundo plano.
+- **Auto-actualización**: envuelve `Docking actualizar` (git pull) con una pantalla de "hay una versión
+  nueva" en vez de tener que usar la terminal.
+
+Instalación (dentro del entorno conda, ya incluido en `env/environment.yml`):
+
+```bash
+pip install --break-system-packages pyside6   # si no viene ya del entorno conda
+Docking gui
+```
+
+---
 
 Si estás dentro de la carpeta de un proyecto no hace falta poner `[carpeta]`. Las rutas se pueden pegar **como en Windows** (`C:\Users\Me\Desktop\...`) o arrastrando la carpeta a la terminal; TAB autocompleta.
 
@@ -88,7 +119,7 @@ Puedes cambiar un proyecto de modo en `Docking abrir`.
 Al crear el proyecto la app pregunta **"¿Vas a trabajar con átomos poco comunes?"**. También lo detecta sola si un ligando trae un elemento que smina no conoce. En ese caso:
 
 - todo el proyecto (ligandos, controles y redocking) se dockea con **AutoDock4** (`autogrid4` + `autodock4`, vienen con ADFRsuite), para que las energías sean comparables entre sí;
-- los parámetros del elemento nuevo se añaden al archivo oficial `AD4.1_bound.dat` con la convención documentada por AutoDock: **Rii y epsii = x1 y D1 del Universal Force Field** (Rappé et al., *JACS* 1992, 114, 10024), volumen de la esfera de diámetro Rii, y solvatación/puentes de H como los metales de AD4. Todo queda escrito en `05_Analisis/parametros_metales.txt` (para la sección de métodos) y en `04_Docking/Mapas/AD4_axd.dat`;
+- los parámetros del elemento nuevo se añaden al archivo oficial `AD4.1_bound.dat` con la convención documentada por AutoDock: **Rii y epsii = x1 y D1 del Universal Force Field** (Rappé et al., *JACS* 1992, 114, 10024), volumen de la esfera de diámetro Rii, y solvatación/puentes de H como los metales de AD4. Todo queda escrito en `05_Analysis/metal_parameters.txt` (para la sección de métodos) y en `04_Docking/Maps/AD4_axd.dat`;
 - cargas parciales **EEM** (Open Babel) conservando la carga formal total; los clusters se tratan como cuerpos rígidos.
 
 Los ligandos metálicos necesitan estructura 3D. Se pueden pedir como componente del PDB:
@@ -107,13 +138,15 @@ o dar la ruta a un `.sdf`/`.mol2` 3D (por ejemplo, tetravanadato desde una estru
 
 | Paso | Qué hace |
 |---|---|
-| `descargar` | RCSB / AlphaFold / PubChem por nombre, CID o SID (3D si existe), y SDF del ligando cristalográfico |
-| `receptores` | cadenas + altloc A, cofactores elegidos, PDBFixer (sin reconstruir lazos), `prepare_receptor -A hydrogens`, caja desde coordenadas reales → `04_Docking/cajas.json` |
-| `ligandos` | quita sales, 3D con RDKit (ETKDGv3 + MMFF) si hace falta, Meeko con macrociclos rígidos |
+| `download` | RCSB / AlphaFold / PubChem por nombre, CID o SID (3D si existe), y SDF del ligando cristalográfico |
+| `receptors` | cadenas + altloc A, cofactores elegidos, PDBFixer (sin reconstruir lazos), `prepare_receptor -A hydrogens`, caja desde coordenadas reales → `04_Docking/boxes.json` |
+| `ligands` | quita sales, 3D con RDKit (ETKDGv3 + MMFF) si hace falta, Meeko con macrociclos rígidos |
 | `redocking` | redockea el ligando cristalográfico y calcula RMSD simétrico (criterio ≤ 2 Å) |
 | `docking` | smina: ligandos × dianas × semillas, en `/tmp` (rutas con espacios OK), escritura atómica, **reanudable** |
-| `resumen` | media ± DE, mejor, eficiencia de ligando, Δ vs control → CSV + Excel, mejores poses |
-| `interacciones` | **complejo proteína + ligando en un solo PDB** (con hidrógenos y enlaces) + pose en SDF, y análisis de interacciones con PLIP: puentes de H, hidrofóbicas, apilamiento π, catión-π, puentes salinos, halógeno, agua y metal (respaldo geométrico si PLIP falla) |
+| `summary` | media ± DE, mejor, eficiencia de ligando, Δ vs control → CSV + Excel, mejores poses |
+| `interactions` | **complejo proteína + ligando en un solo PDB** (con hidrógenos y enlaces) + pose en SDF, y análisis de interacciones con PLIP: puentes de H, hidrofóbicas, apilamiento π, catión-π, puentes salinos, halógeno, agua y metal (respaldo geométrico si PLIP falla) |
+
+(Estos son los identificadores internos que usan `axd.runner` y la GUI — en el menú interactivo cada paso se muestra con su descripción en español, como en la tabla de arriba.)
 
 ### Ver resultados en la terminal
 
@@ -127,16 +160,36 @@ o dar la ruta a un `.sdf`/`.mol2` 3D (por ejemplo, tetravanadato desde una estru
 
 ```
 mi_proyecto/
-├─ axd.json                 configuración (la edita el asistente)
-├─ 01_Receptores/           crudos + limpios/
-├─ 02_Ligandos/  03_Controles/ (ligando_cristal/)
-├─ 04_Docking/  Receptores/ Ligandos/ Controles/ Redocking/ Resultados/<diana>/ MejoresPoses/ Complejos/ cajas.json logs/
-├─ 05_Analisis/             afinidades_resumen.csv, matriz_afinidad.csv, redocking_resumen.csv, interacciones_*.csv, *.xlsx
-├─ 06_Figuras/  07_Reporte/
+├─ axd.json                 configuración (la edita el asistente o la GUI)
+├─ .checkpoints/            snapshots automáticos cada 10% de avance (GUI; viaja con la carpeta)
+├─ 01_Receptors/            crudos + clean/
+├─ 02_Ligands/  03_Controls/ (crystal_ligand/)
+├─ 04_Docking/  Receptors/ Ligands/ Controls/ Redocking/ Results/<diana>/ BestPoses/ Complexes/ boxes.json logs/
+├─ 05_Analysis/             affinities_summary.csv, affinity_matrix.csv, redocking_summary.csv, interactions_*.csv, *.xlsx
+├─ 06_Figures/  07_Report/
 └─ README.md  .gitignore
 ```
 
+(Proyectos creados con versiones anteriores a la Fase 8, con nombres de carpeta en español, se migran solos
+la primera vez que se abren — ver `axd/layout.py::migrate_in_place`.)
+
 ---
+
+## Pruebas automatizadas
+
+Hay una suite de pruebas (`pytest`) en `tests/` que cubre la lógica que no depende de
+herramientas externas (smina, ADFRsuite, RDKit real): el modelo de dominio tipado,
+las fuentes y cajas polimórficas, el plan de recursos y el seguro térmico, y la
+paralelización real del docking. No requiere el entorno conda completo:
+
+```
+pip install pytest
+pytest
+```
+
+Lo que necesita binarios/paquetes reales (smina, ADFRsuite, RDKit, Open Babel) se sigue
+verificando a mano, corriendo el pipeline sobre un proyecto de prueba dentro del entorno
+conda (`env/environment.yml`, que ya incluye `pytest` para correr la suite ahí también).
 
 ## Notas
 

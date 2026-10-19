@@ -4,7 +4,7 @@ Por qué AutoDock4 y no smina/Vina: Vina/smina sólo conocen un conjunto fijo de
 aceptan V, Pt, Ru, etc. AutoDock4 permite añadir tipos nuevos con una línea `atom_par` en su archivo de
 parámetros (procedimiento documentado por los autores de AutoDock).
 
-Cómo se generan los parámetros de un elemento nuevo (queda escrito en 05_Analisis/parametros_metales.txt):
+Cómo se generan los parámetros de un elemento nuevo (queda escrito en 05_Analysis/metal_parameters.txt):
   · Rii (diámetro de van der Waals) y epsii (pozo de energía) = x1 y D1 del Universal Force Field
     (Rappé et al., J. Am. Chem. Soc. 1992, 114, 10024), leídos del UFF.prm de Open Babel del entorno.
   · vol = volumen de la esfera de diámetro Rii (misma convención que C, N, O en AD4).
@@ -23,7 +23,7 @@ import re
 import shutil
 import subprocess
 
-from comun import correr, en_tmp, herramienta, log
+from common import run_cmd, tmp_dir, tool, log
 
 # tipos que smina/Vina entienden; cualquier otro obliga a usar AutoDock4
 TIPOS_SMINA = {"C", "A", "N", "NA", "NS", "OA", "OS", "O", "S", "SA", "P", "F", "Cl", "CL", "Br", "BR", "I",
@@ -156,31 +156,36 @@ def _base_ad4():
     """Archivo de parámetros AD4.1 oficial: el de ADFRsuite, uno ya descargado, o se baja del repositorio
     oficial de AutoDock4 (ccsb-scripps/AutoDock4)."""
     cache = os.path.expanduser("~/.config/axolotl-docking/AD4.1_bound.dat")
-    for base in (os.path.expanduser("~/tools/ADFRsuite-1.0"),
-                 os.path.dirname(os.path.dirname(herramienta("autodock4") or "/x/y"))):
+    ad4_bin = tool("autodock4")
+    candidatos = [os.path.expanduser("~/tools/ADFRsuite-1.0")]
+    if ad4_bin:
+        candidatos.append(os.path.dirname(os.path.dirname(ad4_bin)))
+    for base in candidatos:
+        if not os.path.isdir(base):  # sin esto, autodock4 no encontrado → glob recursivo desde "/"
+            continue
         for nombre in ("AD4.1_bound.dat", "AD4_parameters.dat"):
             r = glob.glob(os.path.join(base, "**", nombre), recursive=True)
             if r:
                 return r[0]
     if os.path.exists(cache):
         return cache
+    from axd.infra import net
     try:
-        import urllib.request
-        with urllib.request.urlopen(URL_AD4, timeout=30) as r:
-            datos = r.read()
-        if b"atom_par OA" in datos:
-            os.makedirs(os.path.dirname(cache), exist_ok=True)
-            open(cache, "wb").write(datos)
-            return cache
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        net.download(URL_AD4, cache, timeout=30, attempts=1)
+        if b"atom_par OA" not in open(cache, "rb").read():
+            os.remove(cache)
+            return None
+        return cache
     except Exception:  # noqa: BLE001
         pass
     return None
 
 
 def escribir_parametros(P, tipos_extra):
-    """Crea 04_Docking/Mapas/AD4_axd.dat (base AD4.1 + tipos nuevos) y documenta la derivación."""
-    os.makedirs(P.r("04_Docking", "Mapas"), exist_ok=True)
-    destino = P.r("04_Docking", "Mapas", "AD4_axd.dat")
+    """Crea 04_Docking/Maps/AD4_axd.dat (base AD4.1 + tipos nuevos) y documenta la derivación."""
+    os.makedirs(P.layout.maps_dir(), exist_ok=True)
+    destino = P.layout.ad4_params_file()
     base = _base_ad4()
     texto = open(base).read() if base else ""
     extra, doc = [], []
@@ -200,9 +205,9 @@ def escribir_parametros(P, tipos_extra):
         fh.write(texto.rstrip() + "\n")
         if extra:
             fh.write("# --- tipos añadidos por Axolotl Docking (UFF: Rappé et al. 1992) ---\n" + "\n".join(extra) + "\n")
-    open(P.r("05_Analisis", "parametros_metales.txt"), "w").write(
+    open(P.layout.metal_parameters_txt(), "w").write(
         "Parámetros AutoDock4 para átomos no estándar (Axolotl Docking)\n"
-        f"Archivo usado: 04_Docking/Mapas/AD4_axd.dat  (base: {base or 'parámetros internos de AutoDock4'})\n\n"
+        f"Archivo usado: 04_Docking/Maps/AD4_axd.dat  (base: {base or 'parámetros internos de AutoDock4'})\n\n"
         + ("\n".join(doc) if doc else "  (no hizo falta añadir tipos)") + "\n\n"
         "Rii y epsii = x1 y D1 del Universal Force Field (Rappé et al., JACS 1992, 114, 10024);\n"
         "vol = esfera de diámetro Rii; solpar y ausencia de puentes de H como los metales de AD4.\n"
@@ -220,15 +225,15 @@ def _npts(size, spacing=0.375):
 
 def preparar_mapas(P, diana_id, receptor, caja, tipos_lig, param):
     """Corre autogrid4 una vez por diana (con todos los tipos de ligando del proyecto)."""
-    carpeta = P.r("04_Docking", "Mapas", diana_id)
-    marca = os.path.join(carpeta, "tipos.txt")
+    carpeta = P.layout.target_maps_dir(diana_id)
+    marca = os.path.join(carpeta, "types.txt")
     clave = " ".join(sorted(tipos_lig)) + f" | {caja['center']} {caja['size']}"
     if os.path.exists(marca) and open(marca).read() == clave:
         return carpeta
-    autogrid = herramienta("autogrid4", ["~/tools/ADFRsuite-1.0/bin/autogrid4"])
+    autogrid = tool("autogrid4", ["~/tools/ADFRsuite-1.0/bin/autogrid4"])
     if not autogrid:
         raise ValueError("autogrid4 no está (viene con ADFRsuite: corre 'Docking entorno')")
-    tmp = en_tmp("grid")
+    tmp = tmp_dir("grid")
     try:
         shutil.copy(receptor, os.path.join(tmp, "rec.pdbqt"))
         shutil.copy(param, os.path.join(tmp, "AD4_axd.dat"))
@@ -242,7 +247,7 @@ def preparar_mapas(P, diana_id, receptor, caja, tipos_lig, param):
                "receptor rec.pdbqt", "gridcenter {:.3f} {:.3f} {:.3f}".format(*caja["center"]), "smooth 0.5"]
         gpf += [f"map rec.{t}.map" for t in tl] + ["elecmap rec.e.map", "dsolvmap rec.d.map", "dielectric -0.1465"]
         open(os.path.join(tmp, "rec.gpf"), "w").write("\n".join(gpf) + "\n")
-        rc, out = correr([autogrid, "-p", "rec.gpf", "-l", "rec.glg"], cwd=tmp)
+        rc, out = run_cmd([autogrid, "-p", "rec.gpf", "-l", "rec.glg"], cwd=tmp)
         if not os.path.exists(os.path.join(tmp, "rec.e.map")):
             glg = open(os.path.join(tmp, "rec.glg"), errors="ignore").read() if os.path.exists(os.path.join(tmp, "rec.glg")) else out
             raise ValueError("autogrid4 falló: " + (glg.strip().splitlines() or ["?"])[-1][:150])
@@ -258,10 +263,10 @@ def preparar_mapas(P, diana_id, receptor, caja, tipos_lig, param):
 def correr_ad4(mapas, lig, salida, semilla, d):
     """Docking con autodock4 (LGA). Escribe la salida como PDBQT multi-modelo compatible con el resto
     del pipeline (REMARK minimizedAffinity = energía libre estimada de AD4)."""
-    autodock = herramienta("autodock4", ["~/tools/ADFRsuite-1.0/bin/autodock4"])
+    autodock = tool("autodock4", ["~/tools/ADFRsuite-1.0/bin/autodock4"])
     if not autodock:
         raise ValueError("autodock4 no está (viene con ADFRsuite: corre 'Docking entorno')")
-    tmp = en_tmp("ad4")
+    tmp = tmp_dir("ad4")
     try:
         for f in os.listdir(mapas):
             if f.endswith((".map", ".fld", ".xyz", ".dat")):
@@ -287,7 +292,7 @@ def correr_ad4(mapas, lig, salida, semilla, d):
                 "sw_lb_rho 0.01", "ls_search_freq 0.06", "set_psw1", "unbound_model bound", f"ga_run {runs}",
                 "analysis"]
         open(os.path.join(tmp, "lig.dpf"), "w").write("\n".join(dpf) + "\n")
-        rc, out = correr([autodock, "-p", "lig.dpf", "-l", "lig.dlg"], cwd=tmp)
+        rc, out = run_cmd([autodock, "-p", "lig.dpf", "-l", "lig.dlg"], cwd=tmp)
         dlg = os.path.join(tmp, "lig.dlg")
         poses = leer_dlg(dlg) if os.path.exists(dlg) else []
         open(salida[:-6] + ".log", "w").write("\n".join(dpf) + "\n\n" + out

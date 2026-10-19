@@ -1,12 +1,12 @@
-"""Paso 'ligandos': cualquier formato → SDF 3D con hidrógenos (RDKit) → PDBQT (Meeko).
+"""Paso 'ligands': cualquier formato → SDF 3D con hidrógenos (RDKit) → PDBQT (Meeko).
 
 Open Babel sólo se usa para leer formatos que RDKit no lee bien (mol2/pdb) en moléculas pequeñas.
 """
 import os
 import shutil
 
-import metales
-from comun import correr, en_tmp, herramienta, log, titulo
+import metals
+from common import run_cmd, tmp_dir, tool, log, title
 
 
 def elementos_de(ruta, smiles=None):
@@ -73,13 +73,13 @@ def leer_molecula(ruta, smiles=None):
         if m is not None:
             return m
     # mol2 / pdb / lo que RDKit no pudo: Open Babel → SDF
-    obabel = herramienta("obabel")
+    obabel = tool("obabel")
     if not obabel:
         raise ValueError("no pude leer el archivo y Open Babel no está disponible")
-    tmp = en_tmp("lig")
+    tmp = tmp_dir("lig")
     try:
         sal = os.path.join(tmp, "x.sdf")
-        correr([obabel, ruta, "-O", sal, "-l", "1"])
+        run_cmd([obabel, ruta, "-O", sal, "-l", "1"])
         if not os.path.exists(sal) or os.path.getsize(sal) == 0:
             raise ValueError("Open Babel no pudo convertir el archivo")
         m = Chem.MolFromMolBlock(open(sal).read().split("$$$$")[0], removeHs=False)
@@ -121,43 +121,43 @@ def preparar_3d(m, semilla=42):
 def a_pdbqt(m, salida, nombre):
     """Escribe SDF con H y lo pasa por Meeko (macrociclos rígidos: smina no entiende átomos G/CG)."""
     from rdkit import Chem
-    mk = herramienta("mk_prepare_ligand.py")
+    mk = tool("mk_prepare_ligand.py")
     if not mk:
         raise ValueError("mk_prepare_ligand.py (Meeko) no está en el entorno")
     sdf = os.path.join(os.path.dirname(salida), "prep", f"{os.path.basename(salida)[:-6]}_H.sdf")
     os.makedirs(os.path.dirname(sdf), exist_ok=True)
     m.SetProp("_Name", nombre)
     w = Chem.SDWriter(sdf); w.write(m); w.close()
-    rc, out = correr([mk, "-i", sdf, "-o", salida + ".part", "--rigid_macrocycles"])
+    rc, out = run_cmd([mk, "-i", sdf, "-o", salida + ".part", "--rigid_macrocycles"])
     if not (os.path.exists(salida + ".part") and os.path.getsize(salida + ".part") > 0):
         raise ValueError("Meeko falló: " + out.strip().splitlines()[-1][:150] if out.strip() else "Meeko falló")
     os.replace(salida + ".part", salida)
 
 
-def ejecutar(P, rehacer=False):
-    titulo("3 · Ligandos y controles → PDBQT")
+def run(P, rehacer=False):
+    title("3 · Ligandos y controles → PDBQT")
     fallos = 0
     total = 0
-    for clave, control in (("ligandos", False), ("controles", True)):
+    for clave, control in (("ligands", False), ("controls", True)):
         for l in P.cfg[clave]:
             total += 1
-            salida = P.ligando_pdbqt(l, control)
+            salida = P.ligand_pdbqt(l, control)
             if os.path.exists(salida) and os.path.getsize(salida) > 0 and not rehacer:
                 log(f"  = {l['id']}")
                 continue
             try:
-                if l.get("archivo", "").lower().endswith(".pdbqt"):
-                    shutil.copy(P.r(l["archivo"]), salida)
+                if l.get("file", "").lower().endswith(".pdbqt"):
+                    shutil.copy(P.r(l["file"]), salida)
                     log(f"  ✔ {l['id']} (PDBQT ya preparado, copiado)")
                     continue
-                if l["fuente"] != "smiles" and not (l.get("archivo") and os.path.exists(P.r(l["archivo"]))):
-                    raise ValueError("falta el archivo (corre el paso 'descargar')")
-                ruta_l = P.r(l["archivo"]) if l.get("archivo") else None
+                if l["source"] != "smiles" and not (l.get("file") and os.path.exists(P.r(l["file"]))):
+                    raise ValueError("falta el archivo (corre el paso 'download')")
+                ruta_l = P.r(l["file"]) if l.get("file") else None
                 els = elementos_de(ruta_l, l.get("smiles"))
-                if metales.es_metalico(els):
+                if metals.es_metalico(els):
                     if not ruta_l:
                         raise ValueError("un ligando con metales necesita estructura 3D (archivo o PDB:CÓDIGO), no SMILES")
-                    info = metales.preparar_en_subproceso(ruta_l, salida, l["id"])
+                    info = metals.preparar_en_subproceso(ruta_l, salida, l["id"])
                     log(f"  ✔ {l['id']:32s} {info['n']:3d} átomos  ⚛ {', '.join(info['elementos'])}  carga {info['carga']:+d}"
                         f"  · cargas {info['metodo']} · rígido · se dockea con AutoDock4"
                         + ("  [control]" if control else ""))
@@ -177,16 +177,16 @@ def ejecutar(P, rehacer=False):
 def preparar_ref_redocking(P, d):
     """Ligando cristalográfico → PDBQT para redocking. Devuelve (pdbqt, mol_ref_sin_H) o (None, None)."""
     from rdkit import Chem
-    salida = P.r("04_Docking", "Redocking", f"{d['id']}_cristal.pdbqt")
+    salida = P.layout.redocking_ligand_pdbqt(d["id"])
     ref = None
-    if not os.path.exists(P.ref_sdf(d)) and d.get("pdb") and d.get("caja", {}).get("ref"):
-        # (modo básico: el ligando se eligió después de 'descargar') — SDF con órdenes de enlace de RCSB
-        from descargar import _bajar
-        res, cad = (d["caja"]["ref"].split(":") + [""])[:2]
+    if not os.path.exists(P.ref_sdf(d)) and d.get("pdb") and d.get("box", {}).get("ref"):
+        # (modo básico: el ligando se eligió después de 'download') — SDF con órdenes de enlace de RCSB
+        from axd.infra import net
+        res, cad = (d["box"]["ref"].split(":") + [""])[:2]
         for u in (f"https://models.rcsb.org/v1/{d['pdb']}/ligand?auth_comp_id={res}&auth_asym_id={cad}&encoding=sdf",
                   f"https://models.rcsb.org/v1/{d['pdb']}/ligand?auth_comp_id={res}&encoding=sdf"):
             try:
-                _bajar(u, P.ref_sdf(d), intentos=2); break
+                net.download(u, P.ref_sdf(d), attempts=2); break
             except IOError:
                 continue
     if os.path.exists(P.ref_sdf(d)):
@@ -209,5 +209,5 @@ def preparar_ref_redocking(P, d):
         return None, None
     ref_noH = Chem.RemoveHs(ref)
     if not (os.path.exists(salida) and os.path.getsize(salida) > 0):
-        a_pdbqt(Chem.AddHs(ref_noH, addCoords=True), salida, f"{d['id']}_cristal")
+        a_pdbqt(Chem.AddHs(ref_noH, addCoords=True), salida, f"{d['id']}_crystal")
     return salida, ref_noH

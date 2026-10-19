@@ -4,13 +4,16 @@ import json
 import os
 import subprocess
 
+from . import layout as L
+from . import domain as D
+
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION = open(os.path.join(APP, "VERSION")).read().strip() if os.path.exists(os.path.join(APP, "VERSION")) else "dev"
 CONF_DIR = os.path.expanduser(os.environ.get("AXD_CONFIG_DIR", "~/.config/axolotl-docking"))
 CONF = os.path.join(CONF_DIR, "config.json")
-ARCHIVO_PROYECTO = "axd.json"
+PROJECT_FILE = "axd.json"
 
-DEFECTO_GLOBAL = {
+DEFAULT_GLOBAL = {
     "entorno": "axolotl-docking",
     "conda": "~/miniforge3",
     "tools_bin": "~/tools/bin",
@@ -19,26 +22,13 @@ DEFECTO_GLOBAL = {
     "recientes": [],
 }
 
-CARPETAS = [
-    "01_Receptores/limpios",
-    "02_Ligandos",
-    "03_Controles/ligando_cristal",
-    "04_Docking/Receptores",
-    "04_Docking/Ligandos",
-    "04_Docking/Controles",
-    "04_Docking/Redocking",
-    "04_Docking/Resultados",
-    "04_Docking/MejoresPoses",
-    "04_Docking/Complejos",
-    "04_Docking/logs",
-    "05_Analisis",
-    "06_Figuras",
-    "07_Reporte",
-]
+# Kept as an alias for anything still importing it directly; Layout is the
+# single source of truth for folder names now.
+CARPETAS = L.ALL_FOLDERS
 
-DOCKING_DEFECTO = {
-    "motor": "smina",
-    "semillas": [42, 2026, 777],
+DEFAULT_DOCKING = {
+    "engine": "smina",
+    "seeds": [42, 2026, 777],
     "exhaustiveness": 32,
     "num_modes": 9,
     "energy_range": 4,
@@ -48,9 +38,73 @@ DOCKING_DEFECTO = {
 }
 
 
+# ---------------------------------------------------------------- esquema (Fase 8: claves en inglés)
+# Proyectos creados con versiones anteriores (Fases 0-7) guardan axd.json con claves en español.
+# Esta tabla es la única fuente de verdad para traducirlos en memoria al cargar, así que esos
+# proyectos siguen funcionando sin que el usuario tenga que hacer nada. Es idempotente: un
+# proyecto que ya está en inglés pasa sin cambios (ninguna clave vieja aparece).
+_PROJECT_KEYS = {"nombre": "name", "modo": "mode", "creado": "created", "version_axd": "axd_version",
+                 "dianas": "targets", "ligandos": "ligands", "controles": "controls"}
+_TARGET_KEYS = {"fuente": "source", "nombre": "name", "archivo": "file", "cadenas": "chains",
+                "cofactores": "cofactors", "caja": "box"}
+_LIGAND_KEYS = {"fuente": "source", "nombre": "name", "consulta": "query", "codigo": "code",
+                "archivo": "file", "diana": "target"}
+_BOX_KEYS = {"modo": "mode", "margen": "margin", "minimo": "minimum", "residuos": "residues",
+             "detalle": "detail"}
+_DOCKING_KEYS = {"motor": "engine", "semillas": "seeds"}
+
+_PROJECT_MODE_VALUES = {"basico": "basic", "avanzado": "advanced"}
+_SOURCE_VALUES = {"archivo": "file"}  # pdb/alphafold/ccd/pubchem/smiles ya eran iguales en ambos idiomas
+_BOX_MODE_VALUES = {"ligando": "ligand", "residuos": "residues", "ciego": "blind"}  # manual/auto ya coinciden
+
+
+def _rename_keys(d: dict, table: dict) -> dict:
+    return {table.get(k, k): v for k, v in d.items()}
+
+
+def _migrate_box(box: dict) -> dict:
+    box = _rename_keys(dict(box), _BOX_KEYS)
+    if box.get("mode") in _BOX_MODE_VALUES:
+        box["mode"] = _BOX_MODE_VALUES[box["mode"]]
+    return box
+
+
+def _migrate_target(t: dict) -> dict:
+    t = _rename_keys(dict(t), _TARGET_KEYS)
+    if t.get("source") in _SOURCE_VALUES:
+        t["source"] = _SOURCE_VALUES[t["source"]]
+    if "box" in t:
+        t["box"] = _migrate_box(t["box"])
+    return t
+
+
+def _migrate_ligand(l: dict) -> dict:
+    l = _rename_keys(dict(l), _LIGAND_KEYS)
+    if l.get("source") in _SOURCE_VALUES:
+        l["source"] = _SOURCE_VALUES[l["source"]]
+    return l
+
+
+def migrate_schema_to_english(p: dict) -> tuple[bool, dict]:
+    """Traduce en memoria un axd.json con claves en español (Fases 0-7) al esquema en
+    inglés de la Fase 8. Devuelve (cambió, proyecto). No toca nada si ya está en inglés."""
+    claves_viejas = set(_PROJECT_KEYS) | {"dianas", "ligandos", "controles"}
+    if not (claves_viejas & p.keys()):
+        return False, p
+    p = _rename_keys(dict(p), _PROJECT_KEYS)
+    if p.get("mode") in _PROJECT_MODE_VALUES:
+        p["mode"] = _PROJECT_MODE_VALUES[p["mode"]]
+    p["targets"] = [_migrate_target(x) for x in p.get("targets", [])]
+    p["ligands"] = [_migrate_ligand(x) for x in p.get("ligands", [])]
+    p["controls"] = [_migrate_ligand(x) for x in p.get("controls", [])]
+    if "docking" in p:
+        p["docking"] = _rename_keys(dict(p["docking"]), _DOCKING_KEYS)
+    return True, p
+
+
 # ---------------------------------------------------------------- global
-def cargar_global():
-    c = dict(DEFECTO_GLOBAL)
+def load_global():
+    c = dict(DEFAULT_GLOBAL)
     if os.path.exists(CONF):
         try:
             c.update(json.load(open(CONF)))
@@ -59,33 +113,33 @@ def cargar_global():
     return c
 
 
-def guardar_global(c):
+def save_global(c):
     os.makedirs(CONF_DIR, exist_ok=True)
     tmp = CONF + ".tmp"
     json.dump(c, open(tmp, "w"), indent=2, ensure_ascii=False)
     os.replace(tmp, CONF)
 
 
-def registrar_reciente(ruta):
-    c = cargar_global()
-    r = [x for x in c.get("recientes", []) if x != ruta and os.path.exists(os.path.join(x, ARCHIVO_PROYECTO))]
-    c["recientes"] = [ruta] + r[:9]
-    guardar_global(c)
+def register_recent(path):
+    c = load_global()
+    r = [x for x in c.get("recientes", []) if x != path and os.path.exists(os.path.join(x, PROJECT_FILE))]
+    c["recientes"] = [path] + r[:9]
+    save_global(c)
 
 
-def ruta_conda(c=None):
+def conda_path(c=None):
     """Busca la instalación de conda: la configurada, la activa o las ubicaciones típicas."""
-    c = c or cargar_global()
-    candidatos = [c.get("conda", ""), os.environ.get("CONDA_EXE", "").rsplit("/bin/", 1)[0],
+    c = c or load_global()
+    candidates = [c.get("conda", ""), os.environ.get("CONDA_EXE", "").rsplit("/bin/", 1)[0],
                   "~/miniforge3", "~/mambaforge", "~/miniconda3", "~/anaconda3"]
-    for x in candidatos:
+    for x in candidates:
         x = os.path.expanduser(x or "")
         if x and os.path.exists(os.path.join(x, "etc/profile.d/conda.sh")):
             return x
     return None
 
 
-def entornos_conda(base):
+def conda_environments(base):
     if not base:
         return []
     try:
@@ -98,61 +152,82 @@ def entornos_conda(base):
 
 
 # ---------------------------------------------------------------- proyecto
-def buscar_proyecto(desde=None):
+def find_project(start=None):
     """Sube desde la carpeta actual buscando axd.json."""
-    d = os.path.abspath(desde or os.getcwd())
+    d = os.path.abspath(start or os.getcwd())
     while True:
-        if os.path.exists(os.path.join(d, ARCHIVO_PROYECTO)):
+        if os.path.exists(os.path.join(d, PROJECT_FILE)):
             return d
-        padre = os.path.dirname(d)
-        if padre == d:
+        parent = os.path.dirname(d)
+        if parent == d:
             return None
-        d = padre
+        d = parent
 
 
-def nuevo_proyecto(ruta, nombre, modo="basico"):
-    for sub in CARPETAS:
-        os.makedirs(os.path.join(ruta, sub), exist_ok=True)
+def new_project(path, name, mode="basic"):
+    for sub in L.ALL_FOLDERS:
+        os.makedirs(os.path.join(path, sub), exist_ok=True)
     p = {
-        "nombre": nombre,
-        "modo": modo,  # "basico" (todo automático) o "avanzado"
-        "creado": _dt.date.today().isoformat(),
-        "version_axd": VERSION,
-        "dianas": [],
-        "ligandos": [],
-        "controles": [],
-        "docking": dict(DOCKING_DEFECTO),
+        "name": name,
+        "mode": mode,  # "basic" (todo automático) o "advanced"
+        "created": _dt.date.today().isoformat(),
+        "axd_version": VERSION,
+        "layout_version": L.CURRENT_LAYOUT_VERSION,
+        "targets": [],
+        "ligands": [],
+        "controls": [],
+        "docking": dict(DEFAULT_DOCKING),
     }
-    guardar_proyecto(ruta, p)
-    gi = os.path.join(ruta, ".gitignore")
+    save_project(path, p)
+    gi = os.path.join(path, ".gitignore")
     if not os.path.exists(gi):
         open(gi, "w").write(
             "# Generado por Axolotl Docking\n__pycache__/\n*.part\n04_Docking/logs/*.pid\n"
             "04_Docking/logs/*.log\n.ipynb_checkpoints/\n*:Zone.Identifier\n")
-    rd = os.path.join(ruta, "README.md")
+    rd = os.path.join(path, "README.md")
     if not os.path.exists(rd):
         open(rd, "w").write(
-            f"# {nombre}\n\n"
+            f"# {name}\n\n"
             "Proyecto de docking creado con **Axolotl Docking** (`Docking`).\n\n"
             "| Carpeta | Contenido |\n|---|---|\n"
-            "| 01_Receptores | estructuras crudas (PDB/AlphaFold) y `limpios/` |\n"
-            "| 02_Ligandos | ligandos de estudio (SDF) |\n"
-            "| 03_Controles | controles positivos y ligandos cristalográficos |\n"
-            "| 04_Docking | receptores/ligandos PDBQT, `cajas.json`, resultados y logs |\n"
-            "| 05_Analisis | tablas de afinidad |\n| 06_Figuras | figuras |\n| 07_Reporte | reporte |\n")
+            "| 01_Receptors | estructuras crudas (PDB/AlphaFold) y `clean/` |\n"
+            "| 02_Ligands | ligandos de estudio (SDF) |\n"
+            "| 03_Controls | controles positivos y ligandos cristalográficos |\n"
+            "| 04_Docking | receptores/ligandos PDBQT, `boxes.json`, resultados y logs |\n"
+            "| 05_Analysis | tablas de afinidad |\n| 06_Figures | figuras |\n| 07_Report | reporte |\n")
     return p
 
 
-def cargar_proyecto(ruta):
-    p = json.load(open(os.path.join(ruta, ARCHIVO_PROYECTO), encoding="utf-8"))
-    p.setdefault("dianas", []); p.setdefault("ligandos", []); p.setdefault("controles", [])
-    p.setdefault("nombre", p.get("codigo") or os.path.basename(os.path.abspath(ruta)))
-    p.setdefault("modo", "avanzado")  # proyectos creados con versiones anteriores
-    d = dict(DOCKING_DEFECTO); d.update(p.get("docking", {})); p["docking"] = d
+def load_project(path):
+    file = os.path.join(path, PROJECT_FILE)
+    p = json.load(open(file, encoding="utf-8"))
+    changed_schema, p = migrate_schema_to_english(p)
+    p.setdefault("targets", []); p.setdefault("ligands", []); p.setdefault("controls", [])
+    p.setdefault("name", p.get("codigo") or os.path.basename(os.path.abspath(path)))
+    p.setdefault("mode", "advanced")  # proyectos creados con versiones anteriores
+    d = dict(DEFAULT_DOCKING); d.update(p.get("docking", {})); p["docking"] = d
+
+    changed_layout, p = L.migrate_in_place(path, p)
+    if changed_schema or changed_layout:
+        L.backup_project_file(file)
+        save_project(path, p)
     return p
 
 
-def guardar_proyecto(ruta, p):
-    f = os.path.join(ruta, ARCHIVO_PROYECTO)
+def save_project(path, p):
+    f = os.path.join(path, PROJECT_FILE)
     json.dump(p, open(f + ".tmp", "w", encoding="utf-8"), indent=2, ensure_ascii=False)
     os.replace(f + ".tmp", f)
+
+
+# ---------------------------------------------------------------- modelo de dominio tipado
+def load_project_typed(path) -> D.Project:
+    """Como load_project(), pero devuelve el modelo tipado (axd.domain.Project) en vez
+    del dict suelto. Pensado para código nuevo (fases 3+); el código existente sigue usando
+    load_project() sin cambios."""
+    return D.Project.from_dict(load_project(path))
+
+
+def save_project_typed(path, p: D.Project):
+    """Inverso de load_project_typed(): serializa el modelo tipado de vuelta a axd.json."""
+    save_project(path, p.to_dict())

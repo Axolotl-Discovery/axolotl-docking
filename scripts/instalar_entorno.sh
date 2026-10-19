@@ -53,7 +53,8 @@ if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
   FALTAN=$("$PY" - <<'PY'
 import importlib, importlib.util
 req = {"rdkit": "rdkit", "meeko": "meeko", "openbabel": "openbabel", "pdbfixer": "pdbfixer", "openmm": "openmm",
-       "gemmi": "gemmi", "numpy": "numpy", "pandas": "pandas", "openpyxl": "openpyxl", "scipy": "scipy"}
+       "gemmi": "gemmi", "numpy": "numpy", "pandas": "pandas", "openpyxl": "openpyxl", "scipy": "scipy",
+       "PySide6": "pyside6"}
 print(" ".join(p for m, p in req.items() if importlib.util.find_spec(m) is None))
 PY
 )

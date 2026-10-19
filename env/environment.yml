@@ -34,8 +34,10 @@ dependencies:
   - ipykernel
   - tqdm
   - pyyaml
+  - pytest
   - vina
   - meeko
+  - pyside6
   - pip
   - pip:
       - plip
