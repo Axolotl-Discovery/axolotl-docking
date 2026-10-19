@@ -183,7 +183,7 @@ las fuentes y cajas polimórficas, el plan de recursos y el seguro térmico, y l
 paralelización real del docking. No requiere el entorno conda completo:
 
 ```
-pip install pytest
+pip install pytest numpy
 pytest
 ```
 
