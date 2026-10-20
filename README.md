@@ -1,6 +1,6 @@
 #  Axolotl Docking
 
-App de terminal para **docking molecular** de Axolotl Discovery. Se instala con un comando en WSL y se usa escribiendo:
+App de terminal para **docking molecular** de Axolotl Discovery. Se instala con un comando (WSL, Linux nativo o macOS) y se usa escribiendo:
 
 ```bash
 Docking
@@ -12,7 +12,7 @@ Te pregunta las rutas y datos del proyecto (dianas, ligandos, controles) y hace 
 
 ## Instalación (una línea)
 
-En una terminal de **WSL (Ubuntu)**:
+Funciona igual en **WSL (Ubuntu)**, **Linux nativo** y **macOS** — en una terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Axolotl-Discovery/axolotl-docking/main/install.sh | bash
@@ -24,10 +24,27 @@ Esto instala:
 |---|---|---|
 | App | comando `Docking` (alias `docking` y `dock`) | `~/.axolotl-docking` → `~/.local/bin/Docking` |
 | A | Miniforge + entorno conda (RDKit, Meeko, Open Babel, PDBFixer, OpenMM, gemmi, Vina, PyMOL, ProLIF, PLIP…) | `~/miniforge3/envs/axolotl-docking` |
-| B | smina estático | `~/tools/bin/smina` |
+| B | smina (Linux: binario estático · macOS: conda-env aislado de bioconda) | `~/tools/bin/smina` |
 | C | ADFRsuite (`prepare_receptor`, `prepare_ligand`, AutoDock4…) | `~/tools/ADFRsuite-1.0` |
 
 Las tres capas van **separadas a propósito**: instalar smina o ADFRsuite dentro de conda degrada numpy/rdkit/openbabel (o rompe el `base`).
+
+### macOS
+
+El pipeline completo (simulaciones incluidas) corre en macOS, con una sola salvedad:
+
+- **Apple Silicon (M1/M2/M3/…):** ni smina ni ADFRsuite publican build nativo `osx-arm64` —
+  el único binario de smina fuera de Linux es el de [bioconda para `osx-64`](https://anaconda.org/bioconda/smina/files)
+  (Intel), y el tarball de [ADFRsuite para Mac](https://ccsb.scripps.edu/adfr/downloads/) tampoco distingue arquitectura.
+  El instalador lo resuelve solo: activa **Rosetta 2** (lo instala si hace falta, pide confirmación
+  del sistema una sola vez) y corre smina en un entorno conda `osx-64` aparte —separado del entorno
+  principal para no arrastrar esa arquitectura a rdkit/numpy/openbabel, que sí tienen build nativo
+  `arm64` y se instalan ahí sin pasar por Rosetta. Si algún paquete del entorno principal no tuviera
+  build nativo `arm64` todavía, el instalador reintenta una vez forzando todo el entorno a `osx-64`
+  antes de rendirse.
+- **Intel:** no necesita nada especial, todas las capas tienen build nativo.
+- Verificado de punta a punta (conda + smina + ADFRsuite reales, con un docking real) en CI sobre
+  `macos-latest` — ver [`.github/workflows/backend-real-install.yml`](.github/workflows/backend-real-install.yml).
 
 Si en esa PC ya tienes un entorno llamado `axolotl-Docking` o `axolot-Docking`, el instalador lo detecta y lo reutiliza (sólo le añade lo que falte). Es seguro volver a correrlo.
 
@@ -154,7 +171,7 @@ o dar la ruta a un `.sdf`/`.mol2` 3D (por ejemplo, tetravanadato desde una estru
 
 - tabla de afinidades por diana (la mejor resaltada), matriz ligando × diana y validación por redocking;
 - interacciones por complejo (conteo por tipo) y el detalle residuo por residuo con distancias;
-- abrir un complejo en **PyMOL** (dentro de WSL) o con el programa predeterminado de Windows, abrir el Excel o la carpeta.
+- abrir un complejo en **PyMOL** (del entorno conda) o con el programa predeterminado del sistema (Explorador en WSL, Finder en macOS), abrir el Excel o la carpeta.
 
 ### Estructura de un proyecto
 
@@ -191,9 +208,22 @@ Lo que necesita binarios/paquetes reales (smina, ADFRsuite, RDKit, Open Babel) s
 verificando a mano, corriendo el pipeline sobre un proyecto de prueba dentro del entorno
 conda (`env/environment.yml`, que ya incluye `pytest` para correr la suite ahí también).
 
+Hay además dos workflows de GitHub Actions:
+
+- [`gui-smoke.yml`](.github/workflows/gui-smoke.yml): arranca la GUI (PySide6, sin entorno
+  gráfico real) en Linux, macOS y Windows en cada push — prueba que la ventana y las 6 pestañas
+  funcionan igual en los tres sistemas.
+- [`backend-real-install.yml`](.github/workflows/backend-real-install.yml): corre
+  `scripts/instalar_entorno.sh` de verdad (conda + smina + ADFRsuite reales, descargados de
+  Internet) en Linux y macOS, y hace un **docking real** con smina sobre un sistema clásico de
+  tutorial (tripsina + bencenamidina, PDB 3PTB) para probar que las tres capas quedan
+  funcionales de punta a punta — no sólo que el instalador compila. Es pesado, así que no corre
+  en cada push: sólo a mano (`workflow_dispatch`) o cuando cambian los propios scripts de
+  instalación.
+
 ## Notas
 
-- El docking corre en segundo plano: puedes cerrar el menú, pero **deja abierta (minimizada) una terminal de WSL**; si se cierran todas, Windows puede apagar WSL.
+- El docking corre en segundo plano: puedes cerrar el menú. **En WSL**, deja abierta (minimizada) una terminal; si se cierran todas, Windows puede apagar WSL. En Linux nativo y macOS no hace falta: el proceso sigue aunque cierres la terminal.
 - Tras un apagón: `Docking reanudar` limpia archivos a medias y sigue con lo que falta.
 - «Rehacer desde cero» no borra nada: mueve los resultados anteriores a `04_Docking/Resultados_respaldo_<fecha>/`.
 - Desinstalar: `bash ~/.axolotl-docking/uninstall.sh` (no toca proyectos, entorno ni `~/tools`).

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  Axolotl Docking — instalador de una línea (WSL / Linux)
+#  Axolotl Docking — instalador de una línea (WSL / Linux / macOS)
 #
 #    curl -fsSL https://raw.githubusercontent.com/Axolotl-Discovery/axolotl-docking/main/install.sh | bash
 #
@@ -10,6 +10,11 @@
 #  Variables:  AXD_HOME (carpeta de instalación, por defecto ~/.axolotl-docking)
 #              AXD_REPO (URL del repo)   AXD_RAMA (rama, por defecto main)
 #              AXD_ENV  (nombre del entorno conda)
+#
+#  macOS: funciona igual (conda/smina/ADFRsuite tienen build de Mac), con una
+#  salvedad en Apple Silicon — ver la nota de Capa B en scripts/instalar_entorno.sh
+#  (smina de bioconda no tiene build nativo arm64 todavía; se instala vía
+#  Rosetta 2, que este instalador ofrece activar si hace falta).
 # ============================================================================
 set -euo pipefail
 
@@ -32,13 +37,28 @@ main() {
   echo "    \\ \\__/ /    Instalando la app de terminal 'Docking'…"
   echo "${N}"
 
-  [ "$(uname -s)" = "Linux" ] || { echo "✘ Esto se instala dentro de WSL/Linux, no en Windows directamente."; exit 1; }
-  grep -qi microsoft /proc/version 2>/dev/null || echo "${A}· No parece WSL; sigo igual (Linux nativo también funciona).${N}"
+  local SO; SO="$(uname -s)"
+  case "$SO" in
+    Linux)
+      grep -qi microsoft /proc/version 2>/dev/null || echo "${A}· No parece WSL; sigo igual (Linux nativo también funciona).${N}"
+      ;;
+    Darwin)
+      echo "${A}· macOS detectado.${N} El pipeline de docking funciona igual (conda + smina + ADFRsuite"
+      echo "  tienen build de Mac); en Apple Silicon, smina corre vía Rosetta 2 (ver más abajo)."
+      ;;
+    *)
+      echo "✘ Esto se instala en WSL, Linux nativo o macOS. '$SO' no está soportado."; exit 1 ;;
+  esac
 
   # --- dependencias mínimas del sistema
   local falta=()
   for c in git python3 curl tar; do command -v "$c" >/dev/null || falta+=("$c"); done
   if [ ${#falta[@]} -gt 0 ]; then
+    if [ "$SO" = "Darwin" ]; then
+      echo "✘ Falta(n): ${falta[*]}. En macOS, instalá las herramientas de línea de comandos de Xcode"
+      echo "  ('xcode-select --install') y volvé a correr este instalador."
+      exit 1
+    fi
     echo "· Instalando dependencias del sistema: ${falta[*]} (puede pedir tu contraseña)"
     sudo apt-get update -qq && sudo apt-get install -y -qq "${falta[@]}"
   fi
@@ -65,12 +85,20 @@ main() {
   ln -sf "$DEST/bin/Docking" "$HOME/.local/bin/Docking"
   ln -sf "$DEST/bin/Docking" "$HOME/.local/bin/docking"
 
-  # --- bloque en ~/.bashrc (PATH para el comando, smina y ADFRsuite)
-  local RC="$HOME/.bashrc"
-  touch "$RC"
-  # (se reescribe en cada instalación para corregir versiones viejas del bloque)
-  sed -i '/# >>> axolotl-docking >>>/,/# <<< axolotl-docking <<</d' "$RC"
-  if true; then
+  # --- bloque en el/los rc de la shell (PATH para el comando, smina y ADFRsuite)
+  # macOS usa zsh por defecto desde Catalina (y suele tener además un .bash_profile
+  # de instalaciones viejas); Linux/WSL casi siempre bash. Se escribe en todos los
+  # que existan o correspondan a $SHELL, para no fallar por adivinar mal.
+  local RCS=("$HOME/.bashrc")
+  if [ "$SO" = "Darwin" ]; then
+    RCS=("$HOME/.zshrc")
+    [ -f "$HOME/.bash_profile" ] && RCS+=("$HOME/.bash_profile")
+    [[ "${SHELL:-}" == */bash ]] && RCS+=("$HOME/.bashrc")
+  fi
+  for RC in "${RCS[@]}"; do
+    touch "$RC"
+    # (se reescribe en cada instalación para corregir versiones viejas del bloque)
+    sed -i.bak '/# >>> axolotl-docking >>>/,/# <<< axolotl-docking <<</d' "$RC" && rm -f "$RC.bak"
     cat >> "$RC" <<'BLOQUE'
 
 # >>> axolotl-docking >>>
@@ -79,8 +107,8 @@ export PATH="$HOME/.local/bin:$PATH:$HOME/tools/bin:$HOME/tools/ADFRsuite-1.0/bi
 alias dock='Docking'
 # <<< axolotl-docking <<<
 BLOQUE
-    echo "${V}✔${N} PATH y alias actualizados en ~/.bashrc"
-  fi
+    echo "${V}✔${N} PATH y alias actualizados en $RC"
+  done
   export PATH="$HOME/.local/bin:$PATH"
 
   # --- configuración: si ya hay un entorno de docking, lo reutiliza
@@ -111,7 +139,7 @@ PY
   fi
 
   echo
-  echo "${V}✔ Listo.${N} Abre una terminal nueva de WSL (o corre: source ~/.bashrc) y escribe:"
+  echo "${V}✔ Listo.${N} Abre una terminal nueva (o corre: source ${RCS[0]}) y escribe:"
   echo
   echo "      ${R}Docking${N}"
   echo

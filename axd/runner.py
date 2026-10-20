@@ -52,9 +52,13 @@ def _vivo(pid):
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError):
         return False
-    try:  # descarta procesos zombi
-        return open(f"/proc/{pid}/stat").read().split(") ")[1][0] != "Z"
-    except OSError:
+    # descarta procesos zombi: `ps -o stat=` existe tanto en Linux (procps)
+    # como en macOS (BSD ps), a diferencia de /proc (que no existe en macOS)
+    try:
+        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                              capture_output=True, text=True, timeout=5).stdout
+        return "Z" not in out.strip().split("\n", 1)[0]
+    except (OSError, subprocess.SubprocessError):
         return True
 
 

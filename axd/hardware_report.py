@@ -63,6 +63,8 @@ def report(redetect: bool = False) -> H.Hardware:
     entorno = []
     if hw.is_wsl:
         entorno.append("WSL")
+    if hw.is_macos:
+        entorno.append("macOS")
     if hw.in_container:
         entorno.append("contenedor")
     if entorno:
@@ -117,6 +119,8 @@ def report(redetect: bool = False) -> H.Hardware:
         aviso = "Sensor de CPU no disponible"
         if hw.is_wsl:
             aviso += " (típico en WSL: no puede proteger la CPU por temperatura)"
+        elif hw.is_macos:
+            aviso += " (macOS no expone temperatura por este medio: no puede proteger la CPU por temperatura)"
         ui.aviso(aviso)
     if gpu_t:
         ui.info("Temperatura GPU ahora: " + ", ".join(f"{t:.0f} °C" for t in gpu_t))
