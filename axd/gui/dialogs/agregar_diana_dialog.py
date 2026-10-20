@@ -188,7 +188,12 @@ class AgregarDianaDialog(QDialog):
         path = self.file_path.text().strip()
         if not path:
             return
+        if not os.path.isfile(path):
+            QMessageBox.warning(self, "Archivo no encontrado", f"No encuentro el archivo:\n{path}")
+            return
         name = self.file_name.text().strip() or os.path.splitext(os.path.basename(path))[0]
+        # 'file' queda como la ruta elegida por ahora; quien recibe result_target
+        # (AnalisisTab._add_target) la materializa dentro del proyecto — ver ahí.
         self.result_target = {"id": L.sanitize_id(name), "source": "file", "name": name, "file": path,
                                "chains": "auto", "cofactors": "auto", "box": {"mode": "auto"}}
         self.accept()

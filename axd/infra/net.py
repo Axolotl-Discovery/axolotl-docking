@@ -37,9 +37,10 @@ def download(url, dest, timeout=60, attempts=1):
 
 def download_pdb(pdb, dest_no_ext, attempts=1):
     """Prueba .pdb y, si no existe, .cif. Devuelve la ruta descargada."""
+    pdb_q = urllib.parse.quote(pdb, safe="")
     for ext in ("pdb", "cif"):
         try:
-            return download(f"https://files.rcsb.org/download/{pdb}.{ext}", f"{dest_no_ext}.{ext}", attempts=attempts)
+            return download(f"https://files.rcsb.org/download/{pdb_q}.{ext}", f"{dest_no_ext}.{ext}", attempts=attempts)
         except IOError:
             continue
     raise IOError(f"No pude descargar {pdb} de RCSB")
@@ -47,7 +48,8 @@ def download_pdb(pdb, dest_no_ext, attempts=1):
 
 def download_alphafold(uniprot, dest, timeout=60):
     """Descarga el modelo de AlphaFold DB para un UniProt. Devuelve el dict de metadatos de la API."""
-    with urllib.request.urlopen(f"https://alphafold.ebi.ac.uk/api/prediction/{uniprot}", timeout=timeout) as r:
+    url = f"https://alphafold.ebi.ac.uk/api/prediction/{urllib.parse.quote(uniprot, safe='')}"
+    with urllib.request.urlopen(url, timeout=timeout) as r:
         info = json.load(r)[0]
     download(info["pdbUrl"], dest)
     return info
