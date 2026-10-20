@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLineEdit,
-                               QPushButton, QTabWidget, QVBoxLayout, QWidget)
+                               QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget)
+
+from ... import layout as L
 
 
 class AgregarLigandoDialog(QDialog):
@@ -47,7 +49,7 @@ class AgregarLigandoDialog(QDialog):
         if not q:
             return
         name = self.name1.text().strip() or q.split()[0]
-        self.result_ligand = {"id": name, "name": name, "source": "pubchem", "query": q}
+        self.result_ligand = {"id": L.sanitize_id(name), "name": name, "source": "pubchem", "query": q}
         self.accept()
 
     def _smiles_tab(self) -> QWidget:
@@ -69,7 +71,7 @@ class AgregarLigandoDialog(QDialog):
         name = self.name2.text().strip()
         if not smi or not name:
             return
-        self.result_ligand = {"id": name, "name": name, "source": "smiles", "smiles": smi}
+        self.result_ligand = {"id": L.sanitize_id(name), "name": name, "source": "smiles", "smiles": smi}
         self.accept()
 
     def _file_tab(self) -> QWidget:
@@ -103,5 +105,19 @@ class AgregarLigandoDialog(QDialog):
         name = self.name3.text().strip() or (os.path.splitext(os.path.basename(path))[0] if path else "")
         if not path or not name:
             return
-        self.result_ligand = {"id": name, "name": name, "source": "file", "file": path}
+        if os.path.isdir(path):
+            # La etiqueta del campo ("Archivo/carpeta") promete soportar carpetas con
+            # varias moléculas, como sí hace el asistente de CLI (axd.wizards.new.
+            # _importar_rutas), pero este diálogo sólo maneja un archivo a la vez —
+            # mejor avisarlo que crear un ligando roto con 'file' apuntando a una carpeta.
+            QMessageBox.warning(self, "Carpeta no soportada aquí",
+                                 "Esta pantalla sólo acepta un archivo. Para importar varias "
+                                 "moléculas de una carpeta, usa el asistente de terminal ('Docking nuevo').")
+            return
+        if not os.path.isfile(path):
+            QMessageBox.warning(self, "Archivo no encontrado", f"No encuentro el archivo:\n{path}")
+            return
+        # 'file' queda como la ruta elegida por ahora; quien recibe result_ligand
+        # (AnalisisTab._add_ligand) la materializa dentro del proyecto — ver ahí.
+        self.result_ligand = {"id": L.sanitize_id(name), "name": name, "source": "file", "file": path}
         self.accept()

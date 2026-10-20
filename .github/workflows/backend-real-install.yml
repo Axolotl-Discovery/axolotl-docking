@@ -9,30 +9,28 @@ name: Instalador real + docking real (Linux/macOS)
 # producen poses reales con afinidades reales (ver el historial de este archivo
 # para la primera corrida exitosa).
 #
-# Es pesado (instala un entorno conda completo + ADFRsuite ≈ 500 MB) y en
-# macOS corre 10× más caro en minutos de Actions que en Linux, así que NO se
-# dispara en cada push: sólo a mano (workflow_dispatch) o cuando cambian los
-# propios scripts de instalación.
+# Es pesado (instala un entorno conda completo + ADFRsuite ≈ 500 MB).
+#
+# Disparo automático desactivado a propósito: las pruebas se corren en
+# entornos propios, no en los runners de GitHub. Queda sólo workflow_dispatch
+# por si alguna vez hace falta lanzarlo a mano desde la pestaña Actions.
 #
 # No corre en este sandbox de desarrollo: el proxy de salida del sandbox
 # bloquea ccsb.scripps.edu/sourceforge.net (ver README de /root/.ccr). Los
 # runners de GitHub sí tienen acceso completo a Internet.
 on:
   workflow_dispatch:
-  push:
-    branches: ["refactor/hardware-and-layout"]
-    paths:
-      - "scripts/instalar_entorno.sh"
-      - "install.sh"
-      - "env/environment.yml"
-      - ".github/workflows/backend-real-install.yml"
 
 jobs:
   instalar-y-dockear:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        # macOS deshabilitado a propósito: consume minutos de Actions a 10× el
+        # coste de Linux y esta cuenta no quiere incurrir en ningún gasto por
+        # eso. Si hace falta validar algo específico de macOS, hazlo a mano
+        # localmente o reactívalo sólo vía workflow_dispatch puntual.
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:

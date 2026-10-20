@@ -30,6 +30,14 @@ def test_pdb_diana_descarga_pdb_directo(fake_net, tmp_path):
     assert fake_net.llamadas[0][1] == "https://files.rcsb.org/download/1ABC.pdb"
 
 
+def test_pdb_diana_escapa_caracteres_especiales_en_la_url(fake_net, tmp_path):
+    # d['pdb'] viene de axd.json (compartido/editado a mano/GUI vieja): no debe
+    # poder inyectar un parámetro de query extra ni partir la URL en segmentos.
+    d = {"id": "d1", "pdb": "1ABC&x=y"}
+    PdbTargetSource().download(d, str(tmp_path), fake_net)
+    assert fake_net.llamadas[0][1] == "https://files.rcsb.org/download/1ABC%26x%3Dy.pdb"
+
+
 def test_pdb_diana_cae_a_cif_si_pdb_falla(fake_net, tmp_path):
     fake_net.fallos.add("https://files.rcsb.org/download/1ABC.pdb")
     d = {"id": "d1", "pdb": "1ABC"}
@@ -95,6 +103,12 @@ def test_ccd_ligando_prueba_ideal_y_cae_a_model(fake_net, tmp_path):
     ruta, desc = CcdLigandSource().download(l, str(tmp_path), fake_net)
     assert ruta == str(tmp_path / "lig1.sdf")
     assert "coordenadas de un cristal" in desc
+
+
+def test_ccd_ligando_escapa_caracteres_especiales_en_la_url(fake_net, tmp_path):
+    l = {"id": "lig1", "code": "HEM/../x"}
+    CcdLigandSource().download(l, str(tmp_path), fake_net)
+    assert fake_net.llamadas[0][1] == "https://files.rcsb.org/ligands/download/HEM%2F..%2Fx_ideal.sdf"
 
 
 def test_ccd_ligando_falla_si_codigo_no_existe(fake_net, tmp_path):

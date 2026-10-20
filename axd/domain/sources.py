@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.parse
 import urllib.request
 
 
@@ -36,10 +37,11 @@ class PdbTargetSource(TargetSource):
     kind = "pdb"
 
     def download(self, d, raw_dir, net):
+        pdb_q = urllib.parse.quote(d["pdb"], safe="")
         for ext in ("pdb", "cif"):
             dest = os.path.join(raw_dir, f"{d['id']}.{ext}")
             try:
-                return net.download(f"https://files.rcsb.org/download/{d['pdb']}.{ext}", dest, attempts=3)
+                return net.download(f"https://files.rcsb.org/download/{pdb_q}.{ext}", dest, attempts=3)
             except IOError:
                 continue
         raise IOError(f"no se pudo descargar {d['pdb']} de RCSB")
@@ -53,8 +55,9 @@ class AlphafoldTargetSource(TargetSource):
 
     def download(self, d, raw_dir, net):
         dest = os.path.join(raw_dir, f"{d['id']}.pdb")
+        url = f"https://alphafold.ebi.ac.uk/api/prediction/{urllib.parse.quote(d['uniprot'], safe='')}"
         try:
-            with urllib.request.urlopen(f"https://alphafold.ebi.ac.uk/api/prediction/{d['uniprot']}", timeout=60) as r:
+            with urllib.request.urlopen(url, timeout=60) as r:
                 info = json.load(r)[0]
             net.download(info["pdbUrl"], dest, attempts=3)
         except Exception as e:  # noqa: BLE001
@@ -100,9 +103,10 @@ class CcdLigandSource(LigandSource):
 
     def download(self, l, folder, net):
         dest = os.path.join(folder, l["id"] + ".sdf")
+        code_q = urllib.parse.quote(l["code"], safe="")
         for suf, desc in (("ideal", "coordenadas ideales"), ("model", "coordenadas de un cristal")):
             try:
-                net.download(f"https://files.rcsb.org/ligands/download/{l['code']}_{suf}.sdf", dest, attempts=2)
+                net.download(f"https://files.rcsb.org/ligands/download/{code_q}_{suf}.sdf", dest, attempts=2)
                 return dest, f"componente PDB {l['code']} ({desc})"
             except IOError:
                 continue

@@ -27,6 +27,34 @@ warn() { echo "  ${A}⚠${N} $*"; }
 fail() { echo "  ${X}✘${N} $*"; }
 paso() { echo; echo "${R}── $* ${N}"; }
 
+# Miniforge/smina/ADFRsuite se bajan directo por HTTPS (no vía conda, que sí
+# verifica integridad por su cuenta) y hasta ahora no se comprobaba más que
+# "no vino vacío"/"empieza con ELF". verificar_checksum calcula y muestra
+# siempre el sha256 de lo descargado (para poder auditarlo/fijarlo a mano), y
+# si la variable de entorno nombrada en $2 trae un hash esperado, lo exige
+# como condición dura. Sin esa variable, sólo avisa — no se inventa un hash
+# aquí porque uno equivocado sería peor que no tener ninguno.
+verificar_checksum() {
+  local archivo="$1" var_esperado="$2" esperado="${!2:-}" real
+  real="$(sha256sum "$archivo" 2>/dev/null | awk '{print $1}')"
+  if [ -z "$real" ]; then
+    warn "no pude calcular sha256 de $(basename "$archivo") (¿falta sha256sum?)"
+    return 0
+  fi
+  if [ -n "$esperado" ]; then
+    if [ "$real" = "$esperado" ]; then
+      ok "sha256 de $(basename "$archivo") verificado contra \$$var_esperado"
+      return 0
+    fi
+    fail "sha256 de $(basename "$archivo") NO coincide con \$$var_esperado"
+    fail "  esperado: $esperado"
+    fail "  obtenido: $real"
+    return 1
+  fi
+  warn "sha256 de $(basename "$archivo"): $real  (sin verificar — exporta \$$var_esperado para fijarlo)"
+  return 0
+}
+
 SO="$(uname -s)"; ARCH="$(uname -m)"
 ES_MAC=0; [ "$SO" = "Darwin" ] && ES_MAC=1
 ES_ARM_MAC=0; [ "$ES_MAC" = 1 ] && [ "$ARCH" = "arm64" ] && ES_ARM_MAC=1
@@ -59,9 +87,10 @@ if [ -z "$CONDA_BASE" ]; then
   echo "  · Instalando Miniforge en ~/miniforge3…"
   tmp=$(mktemp -d)
   curl -fsSL -o "$tmp/mf.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$MF_OS-$ARCH.sh" \
+    && verificar_checksum "$tmp/mf.sh" AXD_MINIFORGE_SHA256 \
     && bash "$tmp/mf.sh" -b -p "$HOME/miniforge3" >/dev/null \
     && CONDA_BASE="$HOME/miniforge3" && "$CONDA_BASE/bin/conda" init bash zsh >/dev/null 2>&1 \
-    && ok "Miniforge instalado" || { fail "No se pudo instalar Miniforge"; exit 1; }
+    && ok "Miniforge instalado" || { fail "No se pudo instalar Miniforge"; rm -rf "$tmp"; exit 1; }
   rm -rf "$tmp"
 else
   ok "conda encontrado en $CONDA_BASE"
@@ -146,6 +175,7 @@ else
   else
     curl -fsSL -o "$TOOLS/bin/smina.part" "https://sourceforge.net/projects/smina/files/smina.static/download" \
       && head -c 4 "$TOOLS/bin/smina.part" | grep -q "ELF" \
+      && verificar_checksum "$TOOLS/bin/smina.part" AXD_SMINA_SHA256 \
       && mv "$TOOLS/bin/smina.part" "$TOOLS/bin/smina" && chmod +x "$TOOLS/bin/smina" \
       && ok "smina instalado en $TOOLS/bin/smina" \
       || { rm -f "$TOOLS/bin/smina.part"; fail "no pude descargar smina (SourceForge). Reintenta más tarde con: Docking entorno"; PROBLEMAS=$((PROBLEMAS+1)); }
@@ -165,7 +195,11 @@ elif [ "$ES_MAC" = 1 ] && ! ensure_rosetta; then
 else
   tmp=$(mktemp -d)
   echo "  · Descargando ADFRsuite (≈ 500 MB)…"
+  # AXD_ADFR_SHA256 es específico de plataforma (el tarball de Linux y el de
+  # macOS son archivos distintos): quien lo fije lo hace para el SO en el que
+  # está corriendo esto, no para ambos a la vez.
   if curl -fL --progress-bar -o "$tmp/ADFRsuite.tar.gz" "$ADFR_URL" \
+     && verificar_checksum "$tmp/ADFRsuite.tar.gz" AXD_ADFR_SHA256 \
      && tar xzf "$tmp/ADFRsuite.tar.gz" -C "$tmp"; then
     d=$(find "$tmp" -maxdepth 1 -type d -name "ADFRsuite_*" | head -1)
     ( cd "$d" && yes | ./install.sh -d "$TOOLS/ADFRsuite-1.0" -c 0 >/dev/null 2>&1 )

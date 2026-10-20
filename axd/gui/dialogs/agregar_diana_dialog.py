@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayo
                                QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QTabWidget,
                                QCheckBox, QVBoxLayout, QWidget)
 
+from ... import layout as L
 from ..services import connectivity, search_rcsb
 
 
@@ -104,8 +105,9 @@ class AgregarDianaDialog(QDialog):
         if not item or not item.data(1):
             return
         hit = item.data(1)
-        self.result_target = {"id": hit.pdb_id, "source": "pdb", "name": hit.title or hit.pdb_id,
-                               "pdb": hit.pdb_id, "chains": "auto", "cofactors": "auto"}
+        self.result_target = {"id": L.sanitize_id(hit.pdb_id), "source": "pdb", "name": hit.title or hit.pdb_id,
+                               "pdb": hit.pdb_id, "chains": "auto", "cofactors": "auto",
+                               "box": {"mode": "auto"}}
         self.accept()
 
     # ---------------------------------------------------------------- PDB ID
@@ -128,8 +130,8 @@ class AgregarDianaDialog(QDialog):
         if not pdb:
             return
         name = self.pdb_name.text().strip() or pdb
-        self.result_target = {"id": name, "source": "pdb", "name": name, "pdb": pdb,
-                               "chains": "auto", "cofactors": "auto"}
+        self.result_target = {"id": L.sanitize_id(name), "source": "pdb", "name": name, "pdb": pdb,
+                               "chains": "auto", "cofactors": "auto", "box": {"mode": "auto"}}
         self.accept()
 
     # ---------------------------------------------------------------- UniProt/AlphaFold
@@ -152,8 +154,8 @@ class AgregarDianaDialog(QDialog):
         if not up:
             return
         name = self.uniprot_name.text().strip() or up
-        self.result_target = {"id": name, "source": "alphafold", "name": name, "uniprot": up,
-                               "chains": "auto", "cofactors": "auto"}
+        self.result_target = {"id": L.sanitize_id(name), "source": "alphafold", "name": name, "uniprot": up,
+                               "chains": "auto", "cofactors": "auto", "box": {"mode": "auto"}}
         self.accept()
 
     # ---------------------------------------------------------------- archivo local
@@ -186,7 +188,12 @@ class AgregarDianaDialog(QDialog):
         path = self.file_path.text().strip()
         if not path:
             return
+        if not os.path.isfile(path):
+            QMessageBox.warning(self, "Archivo no encontrado", f"No encuentro el archivo:\n{path}")
+            return
         name = self.file_name.text().strip() or os.path.splitext(os.path.basename(path))[0]
-        self.result_target = {"id": name, "source": "file", "name": name, "file": path,
-                               "chains": "auto", "cofactors": "auto"}
+        # 'file' queda como la ruta elegida por ahora; quien recibe result_target
+        # (AnalisisTab._add_target) la materializa dentro del proyecto — ver ahí.
+        self.result_target = {"id": L.sanitize_id(name), "source": "file", "name": name, "file": path,
+                               "chains": "auto", "cofactors": "auto", "box": {"mode": "auto"}}
         self.accept()

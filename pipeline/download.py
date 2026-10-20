@@ -1,6 +1,7 @@
 """Paso 'download': receptores (RCSB / AlphaFold), ligandos de PubChem y ligandos cristalográficos."""
 import os
 import time
+import urllib.parse
 
 from common import log, title
 from axd.infra import net
@@ -31,8 +32,9 @@ def run(P, rehacer=False):
             if os.path.exists(dest) and not rehacer:
                 continue
             res, cad = (box["ref"].split(":") + [""])[:2]
-            urls = [f"https://models.rcsb.org/v1/{d['pdb']}/ligand?auth_comp_id={res}&auth_asym_id={cad}&encoding=sdf",
-                    f"https://models.rcsb.org/v1/{d['pdb']}/ligand?auth_comp_id={res}&encoding=sdf"]
+            pdb_q, res_q, cad_q = (urllib.parse.quote(x, safe="") for x in (d["pdb"], res, cad))
+            urls = [f"https://models.rcsb.org/v1/{pdb_q}/ligand?auth_comp_id={res_q}&auth_asym_id={cad_q}&encoding=sdf",
+                    f"https://models.rcsb.org/v1/{pdb_q}/ligand?auth_comp_id={res_q}&encoding=sdf"]
             for u in urls:
                 try:
                     net.download(u, dest, attempts=2)

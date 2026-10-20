@@ -5,27 +5,22 @@ name: GUI smoke test (Linux/macOS/Windows)
 # (eso sigue siendo Linux/WSL-only: smina y ADFRsuite no tienen build de Mac
 # en este repo) — sólo que la ventana, las 6 pestañas y los servicios nuevos
 # de la GUI (axd/gui/services) importan y corren sin un entorno gráfico real.
+# Disparo automático desactivado a propósito: las pruebas se corren en
+# entornos propios, no en los runners de GitHub. Queda sólo workflow_dispatch
+# por si alguna vez hace falta lanzarlo a mano desde la pestaña Actions.
 on:
   workflow_dispatch:
-  push:
-    branches: ["refactor/hardware-and-layout"]
-    paths:
-      - "axd/gui/**"
-      - "axd/**.py"
-      - "tests/**"
-      - ".github/workflows/gui-smoke.yml"
-  pull_request:
-    paths:
-      - "axd/gui/**"
-      - "axd/**.py"
-      - "tests/**"
 
 jobs:
   smoke:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # macOS deshabilitado a propósito: consume minutos de Actions a 10× el
+        # coste de Linux y esta cuenta no quiere incurrir en ningún gasto por
+        # eso. Si hace falta validar algo específico de macOS, hazlo a mano
+        # localmente o reactívalo sólo vía workflow_dispatch puntual.
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

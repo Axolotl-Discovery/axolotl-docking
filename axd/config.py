@@ -208,7 +208,12 @@ def load_project(path):
     d = dict(DEFAULT_DOCKING); d.update(p.get("docking", {})); p["docking"] = d
 
     changed_layout, p = L.migrate_in_place(path, p)
-    if changed_schema or changed_layout:
+    # Un id de diana/ligando/control que no sea un componente de ruta seguro (p. ej.
+    # venido de un axd.json compartido/editado a mano, o de una GUI antigua que no lo
+    # saneaba) se corrige aquí antes de que cualquier paso lo use para construir rutas
+    # — ver axd.layout.sanitize_id() / Layout.r() para el porqué.
+    changed_ids, p = L.ensure_safe_ids(p)
+    if changed_schema or changed_layout or changed_ids:
         L.backup_project_file(file)
         save_project(path, p)
     return p

@@ -4,11 +4,15 @@ save_project (el mismo dict que usan los asistentes de axd/wizards), para no
 duplicar ningún esquema."""
 from __future__ import annotations
 
+import os
+import shutil
+
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSpinBox,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ... import config as C
+from ... import layout as L
 from ..dialogs.agregar_diana_dialog import AgregarDianaDialog
 from ..dialogs.agregar_ligando_dialog import AgregarLigandoDialog
 
@@ -49,6 +53,20 @@ class AnalisisTab(QWidget):
     def _save(self, p: dict) -> None:
         C.save_project(self.state.project, p)
         self.refresh()
+
+    def _materializar_archivo_local(self, carpeta_destino: str, item: dict) -> None:
+        """Copia un archivo local elegido en el diálogo dentro de la carpeta del
+        proyecto — lo mismo que ya hace el asistente de CLI (axd.wizards.new.
+        _importar_rutas) y que el diálogo de la GUI no hacía: sin esto, 'file'
+        quedaba apuntando a una ruta fuera del proyecto (a menudo absoluta), que
+        deja de existir en cuanto el proyecto se mueve o se comparte."""
+        origen = item["file"]
+        ext = os.path.splitext(origen)[1] or ".pdb"
+        os.makedirs(carpeta_destino, exist_ok=True)
+        destino = os.path.join(carpeta_destino, item["id"] + ext)
+        if os.path.abspath(origen) != os.path.abspath(destino):
+            shutil.copy(origen, destino)
+        item["file"] = os.path.relpath(destino, self.state.project)
 
     def refresh(self) -> None:
         self._refresh_dianas()
@@ -102,7 +120,10 @@ class AnalisisTab(QWidget):
             if any(t["id"] == dlg.result_target["id"] for t in p["targets"]):
                 QMessageBox.warning(self, "ID repetido", "Ya hay una diana con ese nombre corto.")
                 return
-            p["targets"].append(dlg.result_target)
+            t = dlg.result_target
+            if t["source"] == "file":
+                self._materializar_archivo_local(L.Layout(self.state.project).receptors_raw_dir(), t)
+            p["targets"].append(t)
             self._save(p)
 
     def _remove_target(self) -> None:
@@ -161,7 +182,12 @@ class AnalisisTab(QWidget):
             if any(x["id"] == dlg.result_ligand["id"] for x in p["ligands"] + p["controls"]):
                 QMessageBox.warning(self, "ID repetido", "Ya hay un ligando/control con ese nombre corto.")
                 return
-            p[bucket].append(dlg.result_ligand)
+            lig = dlg.result_ligand
+            if lig["source"] == "file":
+                lay = L.Layout(self.state.project)
+                carpeta = lay.controls_dir() if bucket == "controls" else lay.ligands_dir()
+                self._materializar_archivo_local(carpeta, lig)
+            p[bucket].append(lig)
             self._save(p)
 
     def _remove_ligand(self) -> None:
