@@ -17,10 +17,13 @@ repackage. Nothing imports it except the report module and the CLI.
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field, asdict
+
+IS_MACOS = platform.system() == "Darwin"
 
 
 # ---------------------------------------------------------------- data model
@@ -41,6 +44,7 @@ class Hardware:
     mem_available_mb: int = 0        # MemAvailable (or cgroup equivalent if lower)
     gpus: list[Gpu] = field(default_factory=list)
     is_wsl: bool = False
+    is_macos: bool = False
     in_container: bool = False
     cpu_limited_by_cgroup: bool = False
     mem_limited_by_cgroup: bool = False
@@ -101,7 +105,16 @@ def _cpuinfo() -> list[dict[str, str]]:
     return blocks
 
 
+def _sysctl(name: str) -> str | None:
+    out = _run(["sysctl", "-n", name])
+    return out.strip() if out else None
+
+
 def cpu_model() -> str:
+    if IS_MACOS:
+        # 'machdep.cpu.brand_string' reporta algo útil tanto en Intel como en
+        # Apple Silicon (p. ej. "Apple M2 Pro") desde macOS 11.
+        return _sysctl("machdep.cpu.brand_string") or "desconocido (macOS)"
     for b in _cpuinfo():
         for key in ("model name", "Model", "Processor", "cpu model"):
             if b.get(key):
@@ -110,6 +123,9 @@ def cpu_model() -> str:
 
 
 def physical_cores(logical_fallback: int) -> int:
+    if IS_MACOS:
+        v = _sysctl("hw.physicalcpu")
+        return int(v) if v and v.isdigit() else logical_fallback
     pairs = set()
     for b in _cpuinfo():
         pid, cid = b.get("physical id"), b.get("core id")
@@ -154,6 +170,31 @@ def _cgroup_cpu_limit() -> float | None:
 
 
 # ---------------------------------------------------------------- memory
+def _macos_mem_total_mb() -> int:
+    v = _sysctl("hw.memsize")  # bytes
+    return int(v) // (1024 * 1024) if v and v.isdigit() else 0
+
+
+def _macos_mem_available_mb() -> int:
+    """Aproximado: 'vm_stat' da páginas libres + inactivas (reclamables sin
+    swap), que es lo más cercano a 'MemAvailable' de Linux que se puede sacar
+    sin dependencias externas. No existe /proc/meminfo en macOS."""
+    out = _run(["vm_stat"])
+    if not out:
+        return 0
+    page_size = 4096
+    m = re.search(r"page size of (\d+) bytes", out)
+    if m:
+        page_size = int(m.group(1))
+    pages = {}
+    for line in out.splitlines():
+        m = re.match(r"Pages (free|inactive):\s+(\d+)\.", line)
+        if m:
+            pages[m.group(1)] = int(m.group(2))
+    total_pages = pages.get("free", 0) + pages.get("inactive", 0)
+    return (total_pages * page_size) // (1024 * 1024)
+
+
 def _meminfo_mb(key: str) -> int:
     txt = _read("/proc/meminfo") or ""
     m = re.search(rf"^{re.escape(key)}:\s+(\d+)\s*kB", txt, re.M)
@@ -205,7 +246,31 @@ def _lspci_gpus() -> list[Gpu]:
     return gpus
 
 
+def _macos_gpus() -> list[Gpu]:
+    out = _run(["system_profiler", "SPDisplaysDataType"], timeout=10)
+    if not out:
+        return []
+    gpus = []
+    name = None
+    for line in out.splitlines():
+        line = line.strip()
+        m = re.match(r"Chipset Model:\s*(.+)", line)
+        if m:
+            name = m.group(1).strip()
+            vendor = ("apple" if "Apple" in name else "amd" if re.search("AMD|Radeon", name) else
+                      "intel" if "Intel" in name else "unknown")
+            gpus.append(Gpu(name=name, vendor=vendor))
+            continue
+        m = re.match(r"VRAM \([^)]*\):\s*(\d+)\s*(MB|GB)", line)
+        if m and gpus:
+            mb = int(m.group(1)) * (1024 if m.group(2) == "GB" else 1)
+            gpus[-1].vram_mb = mb
+    return gpus
+
+
 def detect_gpus() -> list[Gpu]:
+    if IS_MACOS:
+        return _macos_gpus()
     gpus = _nvidia_gpus()
     if gpus:
         return gpus
@@ -228,9 +293,13 @@ def detect() -> Hardware:
         if capped < usable:
             usable, cpu_capped = capped, True
 
-    mem_total = _meminfo_mb("MemTotal")
-    mem_avail = _meminfo_mb("MemAvailable") or mem_total
-    cg_mem = _cgroup_mem_limit_mb()
+    if IS_MACOS:
+        mem_total = _macos_mem_total_mb()
+        mem_avail = _macos_mem_available_mb() or mem_total
+    else:
+        mem_total = _meminfo_mb("MemTotal")
+        mem_avail = _meminfo_mb("MemAvailable") or mem_total
+    cg_mem = _cgroup_mem_limit_mb()  # no existe en macOS: siempre None ahí
     mem_capped = False
     if cg_mem is not None and cg_mem < mem_total:
         mem_total, mem_capped = cg_mem, True
@@ -245,6 +314,7 @@ def detect() -> Hardware:
         mem_available_mb=mem_avail,
         gpus=detect_gpus(),
         is_wsl=detect_wsl(),
+        is_macos=IS_MACOS,
         in_container=detect_container(),
         cpu_limited_by_cgroup=cpu_capped,
         mem_limited_by_cgroup=mem_capped,

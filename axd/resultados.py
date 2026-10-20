@@ -2,6 +2,7 @@
 import csv
 import glob
 import os
+import platform
 import shutil
 import subprocess
 import unicodedata
@@ -10,6 +11,8 @@ from . import config as C
 from . import runner
 from . import ui
 from .layout import Layout
+
+IS_MACOS = platform.system() == "Darwin"
 
 
 def _ancho(t):
@@ -129,7 +132,17 @@ def ver_interacciones(proy):
 
 # ---------------------------------------------------------------- abrir archivos
 def abrir_en_windows(ruta):
-    """Abre un archivo o carpeta con el programa predeterminado de Windows."""
+    """Abre un archivo o carpeta con el programa predeterminado del sistema
+    (pese al nombre, histórico de cuando esto sólo corría en WSL): macOS usa
+    'open', WSL usa explorer.exe/wslview, y Linux nativo xdg-open."""
+    if IS_MACOS:
+        try:
+            subprocess.Popen(["open", ruta], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ui.ok(f"Abriendo {os.path.basename(ruta) or ruta}…")
+            return True
+        except Exception:  # noqa: BLE001
+            ui.info(f"Ábrelo a mano: {ruta}")
+            return False
     if shutil.which("explorer.exe") and shutil.which("wslpath"):
         try:
             win = subprocess.check_output(["wslpath", "-w", ruta], text=True).strip()
@@ -147,7 +160,9 @@ def abrir_en_windows(ruta):
 
 
 def abrir_pymol(ruta):
-    """Abre en PyMOL del entorno conda (necesita WSLg: Windows 11 o Windows 10 actualizado)."""
+    """Abre en PyMOL del entorno conda (en WSL necesita WSLg: Windows 11 o
+    Windows 10 actualizado; en macOS y Linux nativo abre su propia ventana sin
+    requisitos extra)."""
     g = C.load_global()
     conda = C.conda_path(g)
     if not conda:
@@ -156,7 +171,10 @@ def abrir_pymol(ruta):
            f'export PATH="$CONDA_PREFIX/bin:$PATH" && exec pymol "$1"')
     subprocess.Popen(["bash", "-c", cmd, "axd", ruta], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
-    ui.ok("Abriendo PyMOL… (si no aparece ninguna ventana, tu WSL no tiene modo gráfico: usa la opción de Windows)")
+    if IS_MACOS:
+        ui.ok("Abriendo PyMOL…")
+    else:
+        ui.ok("Abriendo PyMOL… (si no aparece ninguna ventana, tu WSL no tiene modo gráfico: usa la opción de Windows)")
 
 
 def abrir_complejo(proy, ruta=None):
@@ -169,9 +187,9 @@ def abrir_complejo(proy, ruta=None):
         if not k:
             return
         ruta = k
-    como = ui.menu("¿Con qué lo abro?", [("pymol", "PyMOL (dentro de WSL)"),
-                                         ("win", "Programa predeterminado de Windows (PyMOL, Chimera, Discovery Studio…)"),
-                                         ("carpeta", "Mostrar el archivo en el Explorador")], defecto=1)
+    como = ui.menu("¿Con qué lo abro?", [("pymol", "PyMOL (del entorno conda)"),
+                                         ("win", "Programa predeterminado del sistema (PyMOL, Chimera, Discovery Studio…)"),
+                                         ("carpeta", "Mostrar el archivo en el Explorador/Finder")], defecto=1)
     if como == "pymol":
         abrir_pymol(ruta)
     elif como == "win":

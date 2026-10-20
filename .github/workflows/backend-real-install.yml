@@ -1,0 +1,95 @@
+name: Instalador real + docking real (Linux/macOS)
+
+# Esta es la prueba "de verdad" del backend: corre scripts/instalar_entorno.sh
+# TAL CUAL lo correría una persona (conda/miniforge + smina + ADFRsuite reales,
+# descargados de Internet) y después hace un docking real con smina sobre un
+# sistema clásico de tutorial (tripsina + bencenamidina, PDB 3PTB) para probar
+# que las "capas" A/B/C quedan funcionales de punta a punta — no sólo que el
+# script compila.
+#
+# Es pesado (instala un entorno conda completo + ADFRsuite ≈ 500 MB) y en
+# macOS corre 10× más caro en minutos de Actions que en Linux, así que NO se
+# dispara en cada push: sólo a mano (workflow_dispatch) o cuando cambian los
+# propios scripts de instalación.
+#
+# No corre en este sandbox de desarrollo: el proxy de salida del sandbox
+# bloquea ccsb.scripps.edu/sourceforge.net (ver README de /root/.ccr). Los
+# runners de GitHub sí tienen acceso completo a Internet.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["refactor/hardware-and-layout"]
+    paths:
+      - "scripts/instalar_entorno.sh"
+      - "install.sh"
+      - "env/environment.yml"
+      - ".github/workflows/backend-real-install.yml"
+
+jobs:
+  instalar-y-dockear:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Correr scripts/instalar_entorno.sh (conda + smina + ADFRsuite reales)
+        run: bash scripts/instalar_entorno.sh
+
+      - name: Docking real con smina (tripsina + bencenamidina, PDB 3PTB)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONF="$HOME/.config/axolotl-docking/config.json"
+          CONDA_BASE="$(python3 -c "import json;print(json.load(open('$CONF'))['conda'])" | sed "s|^~|$HOME|")"
+          ENV_NAME="$(python3 -c "import json;print(json.load(open('$CONF'))['entorno'])")"
+          # shellcheck disable=SC1091
+          source "$CONDA_BASE/etc/profile.d/conda.sh"
+          conda activate "$ENV_NAME"
+          export PATH="$CONDA_PREFIX/bin:$PATH:$HOME/tools/bin:$HOME/tools/ADFRsuite-1.0/bin"
+
+          command -v smina >/dev/null || { echo "✘ smina no está en el PATH"; exit 1; }
+          command -v prepare_receptor >/dev/null || { echo "✘ prepare_receptor (ADFRsuite) no está en el PATH"; exit 1; }
+          command -v mk_prepare_ligand.py >/dev/null || { echo "✘ mk_prepare_ligand.py (Meeko) no está en el PATH"; exit 1; }
+
+          tmp="$(mktemp -d)"; cd "$tmp"
+          curl -fsSL -o 3ptb.pdb https://files.rcsb.org/download/3PTB.pdb
+
+          # separa receptor (proteína) y ligando cristalográfico (BEN = bencenamidina),
+          # igual que lo hace el pipeline real (pipeline/receptors.py y pipeline/ligands.py)
+          grep '^ATOM' 3ptb.pdb > receptor.pdb
+          grep 'BEN' 3ptb.pdb | grep '^HETATM' > ligando.pdb
+
+          # receptor: mismas banderas que pipeline/receptors.py
+          prepare_receptor -r receptor.pdb -o receptor.pdbqt -A hydrogens -U nphs_lps_waters
+
+          # ligando: mismo camino que pipeline/ligands.py (obabel da H/3D+enlaces, Meeko → PDBQT)
+          obabel ligando.pdb -O ligando.sdf -h
+          mk_prepare_ligand.py -i ligando.sdf -o ligando.pdbqt --rigid_macrocycles
+
+          # caja de docking = centroide del ligando cristalográfico (± 10 Å)
+          cat > centroide.py <<'PYEOF'
+          import sys
+          xs = ys = zs = n = 0.0
+          with open(sys.argv[1]) as fh:
+              for line in fh:
+                  if line.startswith("HETATM"):
+                      xs += float(line[30:38]); ys += float(line[38:46]); zs += float(line[46:54]); n += 1
+          print(xs / n, ys / n, zs / n)
+          PYEOF
+          read -r CX CY CZ <<< "$(python3 centroide.py ligando.pdb)"
+          echo "  · Centro de la caja: $CX $CY $CZ"
+
+          smina --receptor receptor.pdbqt --ligand ligando.pdbqt \
+                --center_x "$CX" --center_y "$CY" --center_z "$CZ" \
+                --size_x 20 --size_y 20 --size_z 20 \
+                --exhaustiveness 4 --seed 42 \
+                --out dock.sdf --log dock.log
+
+          echo "── dock.log ──"; cat dock.log
+          [ -s dock.sdf ] || { echo "✘ smina no produjo poses (dock.sdf vacío)"; exit 1; }
+          grep -q "Affinity" dock.log || { echo "✘ dock.log no tiene una afinidad calculada"; exit 1; }
+          echo "✔ Docking real OK en $(uname -s)/$(uname -m): smina + ADFRsuite funcionan de punta a punta."

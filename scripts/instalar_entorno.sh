@@ -2,10 +2,17 @@
 # ============================================================================
 #  Instala el entorno de docking de Axolotl Discovery en TRES CAPAS separadas:
 #    A · conda (miniforge) + entorno con RDKit, Meeko, Open Babel, PDBFixer, Vina, PyMOL…
-#    B · smina estático en ~/tools/bin              (NUNCA vía conda)
+#    B · smina estático en ~/tools/bin              (NUNCA vía conda, salvo Mac — ver abajo)
 #    C · ADFRsuite en ~/tools/ADFRsuite-1.0         (NUNCA vía conda)
 #  Es idempotente: lo que ya está instalado se respeta.
 #  Opciones: --sin-smina  --sin-adfr
+#
+#  macOS: conda (miniforge) y ADFRsuite tienen build oficial de Mac. smina NO —
+#  el único build fuera de Linux que existe es el de bioconda para osx-64
+#  (Intel); en Apple Silicon se instala en un conda-env aparte forzando ese
+#  subdir, y corre vía Rosetta 2 (se instala sola si falta). Si algún paquete
+#  del entorno principal no tuviera build nativo osx-arm64, se reintenta una
+#  vez forzando todo el entorno a osx-64 (Rosetta) antes de rendirse.
 # ============================================================================
 set -uo pipefail
 APP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +27,21 @@ warn() { echo "  ${A}⚠${N} $*"; }
 fail() { echo "  ${X}✘${N} $*"; }
 paso() { echo; echo "${R}── $* ${N}"; }
 
+SO="$(uname -s)"; ARCH="$(uname -m)"
+ES_MAC=0; [ "$SO" = "Darwin" ] && ES_MAC=1
+ES_ARM_MAC=0; [ "$ES_MAC" = 1 ] && [ "$ARCH" = "arm64" ] && ES_ARM_MAC=1
+
+ensure_rosetta() {
+  # smina (bioconda) y ADFRsuite no tienen build nativo arm64: sus binarios
+  # Intel necesitan Rosetta 2 para correr en Apple Silicon.
+  [ "$ES_ARM_MAC" = 1 ] || return 0
+  arch -x86_64 /usr/bin/true >/dev/null 2>&1 && return 0
+  echo "  · Instalando Rosetta 2 (hace falta para smina/ADFRsuite en Apple Silicon)…"
+  softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 \
+    && ok "Rosetta 2 instalado" \
+    || { fail "no pude instalar Rosetta 2 (corré a mano: softwareupdate --install-rosetta)"; return 1; }
+}
+
 ENV_NAME="${AXD_ENV:-$(python3 -c "import json;print(json.load(open('$CONF')).get('entorno','axolotl-docking'))" 2>/dev/null || echo axolotl-docking)}"
 TOOLS="$HOME/tools"; mkdir -p "$TOOLS/bin"
 PROBLEMAS=0
@@ -27,15 +49,18 @@ PROBLEMAS=0
 # ---------------------------------------------------------------- A · conda
 paso "Capa A · conda + entorno '$ENV_NAME'"
 CONDA_BASE=""
-for d in "$HOME/miniforge3" "$HOME/mambaforge" "$HOME/miniconda3" "$HOME/anaconda3"; do
+CANDIDATOS=("$HOME/miniforge3" "$HOME/mambaforge" "$HOME/miniconda3" "$HOME/anaconda3")
+[ "$ES_MAC" = 1 ] && CANDIDATOS+=("/opt/homebrew/Caskroom/miniforge/base" "/usr/local/Caskroom/miniforge/base")
+for d in "${CANDIDATOS[@]}"; do
   [ -f "$d/etc/profile.d/conda.sh" ] && { CONDA_BASE="$d"; break; }
 done
 if [ -z "$CONDA_BASE" ]; then
+  MF_OS="Linux"; [ "$ES_MAC" = 1 ] && MF_OS="MacOSX"
   echo "  · Instalando Miniforge en ~/miniforge3…"
   tmp=$(mktemp -d)
-  curl -fsSL -o "$tmp/mf.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-$(uname -m).sh" \
+  curl -fsSL -o "$tmp/mf.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$MF_OS-$ARCH.sh" \
     && bash "$tmp/mf.sh" -b -p "$HOME/miniforge3" >/dev/null \
-    && CONDA_BASE="$HOME/miniforge3" && "$CONDA_BASE/bin/conda" init bash >/dev/null 2>&1 \
+    && CONDA_BASE="$HOME/miniforge3" && "$CONDA_BASE/bin/conda" init bash zsh >/dev/null 2>&1 \
     && ok "Miniforge instalado" || { fail "No se pudo instalar Miniforge"; exit 1; }
   rm -rf "$tmp"
 else
@@ -69,35 +94,77 @@ else
   if $SOLVER env create -y -n "$ENV_NAME" -f "$APP/env/environment.yml" 2>/dev/null \
      || $SOLVER env create -n "$ENV_NAME" -f "$APP/env/environment.yml"; then
     ok "entorno '$ENV_NAME' creado"
+  elif [ "$ES_ARM_MAC" = 1 ] && ensure_rosetta; then
+    warn "no resolvió con builds nativos de Apple Silicon; reintento forzando Intel (Rosetta 2)…"
+    if CONDA_SUBDIR=osx-64 $SOLVER env create -y -n "$ENV_NAME" -f "$APP/env/environment.yml" 2>/dev/null \
+       || CONDA_SUBDIR=osx-64 $SOLVER env create -n "$ENV_NAME" -f "$APP/env/environment.yml"; then
+      conda activate "$ENV_NAME" && conda config --env --set subdir osx-64 && conda deactivate
+      ok "entorno '$ENV_NAME' creado (Intel vía Rosetta 2)"
+    else
+      fail "no se pudo crear el entorno ni nativo ni vía Rosetta (revisa tu conexión y vuelve a correr: Docking entorno)"
+      PROBLEMAS=$((PROBLEMAS+1))
+    fi
   else
     fail "no se pudo crear el entorno (revisa tu conexión y vuelve a correr: Docking entorno)"; PROBLEMAS=$((PROBLEMAS+1))
   fi
 fi
 
 # ---------------------------------------------------------------- B · smina
-paso "Capa B · smina (binario estático)"
-if [ "$SIN_SMINA" = 1 ]; then
-  echo "  · omitido (--sin-smina)"
-elif [ -x "$TOOLS/bin/smina" ] && head -c 4 "$TOOLS/bin/smina" | grep -q ELF; then
-  ok "smina ya instalado: $TOOLS/bin/smina"
+if [ "$ES_MAC" = 1 ]; then
+  # No existe build estático de smina para macOS. El único binario fuera de
+  # Linux que hay es el de bioconda, sólo para osx-64 (Intel) — así que va en
+  # un conda-env propio y aislado (nunca el principal, para no arriesgar las
+  # versiones de rdkit/numpy/openbabel que ya resolvió ese entorno), forzado
+  # a osx-64 aunque la Mac sea Apple Silicon (corre vía Rosetta 2).
+  paso "Capa B · smina (bioconda, entorno aislado — macOS no tiene build estático)"
+  SMINA_ENV="${ENV_NAME}-smina"
+  if [ "$SIN_SMINA" = 1 ]; then
+    echo "  · omitido (--sin-smina)"
+  elif [ -x "$TOOLS/bin/smina" ]; then
+    ok "smina ya instalado: $TOOLS/bin/smina"
+  elif ensure_rosetta \
+       && (CONDA_SUBDIR=osx-64 $SOLVER create -y -n "$SMINA_ENV" -c bioconda -c conda-forge --subdir osx-64 smina \
+           2>/dev/null || CONDA_SUBDIR=osx-64 $SOLVER create -n "$SMINA_ENV" -c bioconda -c conda-forge --subdir osx-64 smina); then
+    cat > "$TOOLS/bin/smina" <<SMINA_WRAPPER
+#!/usr/bin/env bash
+# Generado por instalar_entorno.sh: smina vive en su propio conda-env (bioconda
+# no publica build nativo osx-arm64; en Apple Silicon corre vía Rosetta 2).
+exec "$CONDA_BASE/envs/$SMINA_ENV/bin/smina" "\$@"
+SMINA_WRAPPER
+    chmod +x "$TOOLS/bin/smina"
+    ok "smina instalado en $TOOLS/bin/smina (vía conda-env '$SMINA_ENV')"
+  else
+    fail "no pude instalar smina (bioconda) en macOS. Reintenta con: Docking entorno"; PROBLEMAS=$((PROBLEMAS+1))
+  fi
 else
-  curl -fsSL -o "$TOOLS/bin/smina.part" "https://sourceforge.net/projects/smina/files/smina.static/download" \
-    && head -c 4 "$TOOLS/bin/smina.part" | grep -q "ELF" \
-    && mv "$TOOLS/bin/smina.part" "$TOOLS/bin/smina" && chmod +x "$TOOLS/bin/smina" \
-    && ok "smina instalado en $TOOLS/bin/smina" \
-    || { rm -f "$TOOLS/bin/smina.part"; fail "no pude descargar smina (SourceForge). Reintenta más tarde con: Docking entorno"; PROBLEMAS=$((PROBLEMAS+1)); }
+  paso "Capa B · smina (binario estático)"
+  if [ "$SIN_SMINA" = 1 ]; then
+    echo "  · omitido (--sin-smina)"
+  elif [ -x "$TOOLS/bin/smina" ] && head -c 4 "$TOOLS/bin/smina" | grep -q ELF; then
+    ok "smina ya instalado: $TOOLS/bin/smina"
+  else
+    curl -fsSL -o "$TOOLS/bin/smina.part" "https://sourceforge.net/projects/smina/files/smina.static/download" \
+      && head -c 4 "$TOOLS/bin/smina.part" | grep -q "ELF" \
+      && mv "$TOOLS/bin/smina.part" "$TOOLS/bin/smina" && chmod +x "$TOOLS/bin/smina" \
+      && ok "smina instalado en $TOOLS/bin/smina" \
+      || { rm -f "$TOOLS/bin/smina.part"; fail "no pude descargar smina (SourceForge). Reintenta más tarde con: Docking entorno"; PROBLEMAS=$((PROBLEMAS+1)); }
+  fi
 fi
 
 # ---------------------------------------------------------------- C · ADFRsuite
 paso "Capa C · ADFRsuite (prepare_receptor / prepare_ligand)"
+ADFR_URL="https://ccsb.scripps.edu/adfr/download/1038/"   # Linux (64-bit), tarball installer
+[ "$ES_MAC" = 1 ] && ADFR_URL="https://ccsb.scripps.edu/adfr/download/1033/"  # macOS, tarball installer
 if [ "$SIN_ADFR" = 1 ]; then
   echo "  · omitido (--sin-adfr)"
 elif [ -x "$TOOLS/ADFRsuite-1.0/bin/prepare_receptor" ]; then
   ok "ADFRsuite ya instalado: $TOOLS/ADFRsuite-1.0"
+elif [ "$ES_MAC" = 1 ] && ! ensure_rosetta; then
+  fail "ADFRsuite en Apple Silicon necesita Rosetta 2 y no se pudo instalar"; PROBLEMAS=$((PROBLEMAS+1))
 else
   tmp=$(mktemp -d)
   echo "  · Descargando ADFRsuite (≈ 500 MB)…"
-  if curl -fL --progress-bar -o "$tmp/ADFRsuite.tar.gz" "https://ccsb.scripps.edu/adfr/download/1038/" \
+  if curl -fL --progress-bar -o "$tmp/ADFRsuite.tar.gz" "$ADFR_URL" \
      && tar xzf "$tmp/ADFRsuite.tar.gz" -C "$tmp"; then
     d=$(find "$tmp" -maxdepth 1 -type d -name "ADFRsuite_*" | head -1)
     ( cd "$d" && yes | ./install.sh -d "$TOOLS/ADFRsuite-1.0" -c 0 >/dev/null 2>&1 )
