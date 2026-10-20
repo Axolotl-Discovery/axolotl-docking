@@ -32,7 +32,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        # macOS deshabilitado a propósito: consume minutos de Actions a 10× el
+        # coste de Linux y esta cuenta no quiere incurrir en ningún gasto por
+        # eso. Si hace falta validar algo específico de macOS, hazlo a mano
+        # localmente o reactívalo sólo vía workflow_dispatch puntual.
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
