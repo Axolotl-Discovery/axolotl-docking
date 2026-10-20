@@ -67,18 +67,27 @@ class ResidueBox(Box):
         self.cfg = cfg
 
     def calculate(self, ctx):
+        residues_raw = self.cfg.get("residues")
+        if not residues_raw:
+            return BoxResult(ok=False, error="falta 'residues' (lista de residuos) en una caja de modo 'residues'")
         want = []
-        for tok in str(self.cfg["residues"]).replace(";", ",").split(","):
+        for tok in str(residues_raw).replace(";", ",").split(","):
             tok = tok.strip()
             if not tok:
                 continue
             ch, num = (tok.split(":") if ":" in tok else (None, tok))
             num = "".join(x for x in num if x.isdigit() or x == "-")
-            want.append((ch.strip().upper() if ch else None, int(num)))
+            try:
+                n = int(num)
+            except ValueError:
+                return BoxResult(ok=False, error=f"residuo mal formado en 'residues': {tok!r}")
+            want.append((ch.strip().upper() if ch else None, n))
+        if not want:
+            return BoxResult(ok=False, error=f"'residues' no tiene ningún residuo válido: {residues_raw!r}")
         sel = [l for l in ctx.body if l[:4] == "ATOM" and any(
             int(l[22:26]) == n and (ch is None or l[21] == ch) for ch, n in want)]
         if not sel:
-            return BoxResult(ok=False, error=f"ninguno de los residuos {self.cfg['residues']} existe en el receptor limpio")
+            return BoxResult(ok=False, error=f"ninguno de los residuos {residues_raw} existe en el receptor limpio")
         c, s = ctx.box_fn(ctx.xyz_fn(sel), self.cfg.get("margin", 8), self.cfg.get("minimum", 20))
         detail = f"{len(want)} residuos ({len(sel)} átomos)"
         return BoxResult(ok=True, center=c, size=s, detail=detail)
@@ -92,7 +101,10 @@ class ManualBox(Box):
         self.cfg = cfg
 
     def calculate(self, ctx):
-        return BoxResult(ok=True, center=self.cfg["center"], size=self.cfg["size"], detail="manual")
+        center, size = self.cfg.get("center"), self.cfg.get("size")
+        if not center or not size:
+            return BoxResult(ok=False, error="falta 'center' y/o 'size' en una caja de modo 'manual'")
+        return BoxResult(ok=True, center=center, size=size, detail="manual")
 
 
 class BlindBox(Box):

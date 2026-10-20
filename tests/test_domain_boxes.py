@@ -94,11 +94,40 @@ def test_caja_residuos_ninguno_existe_falla():
     assert "ninguno de los residuos Z:999 existe" in r.error
 
 
+def test_caja_residuos_sin_clave_residues_falla_con_mensaje_claro():
+    # Antes: KeyError sin atrapar (self.cfg["residues"]) si faltaba la clave —
+    # p. ej. un axd.json compartido/editado a mano con box.mode="residues" pero
+    # sin 'residues'. Ahora es un BoxResult(ok=False, ...) como cualquier otro fallo.
+    obj = ResidueBox({})
+    r = obj.calculate(_ctx())
+    assert not r.ok
+    assert "falta 'residues'" in r.error
+
+
+def test_caja_residuos_token_malformado_falla_con_mensaje_claro():
+    # Antes: ValueError sin atrapar (int("-")) propagándose fuera de calculate().
+    obj = ResidueBox({"residues": "A:-"})
+    r = obj.calculate(_ctx())
+    assert not r.ok
+    assert "mal formado" in r.error
+
+
 # ---------------------------------------------------------------- ManualBox
 def test_caja_manual_usa_valores_tal_cual():
     obj = ManualBox({"center": [1, 2, 3], "size": [10, 10, 10]})
     r = obj.calculate(_ctx())
     assert r.ok and r.center == [1, 2, 3] and r.size == [10, 10, 10] and r.detail == "manual"
+
+
+def test_caja_manual_sin_center_o_size_falla_con_mensaje_claro():
+    # Antes: KeyError sin atrapar (self.cfg["center"]/["size"]) si faltaban —
+    # misma clase de defecto que el bug original de 'box' ausente.
+    r = ManualBox({}).calculate(_ctx())
+    assert not r.ok
+    assert "center" in r.error and "size" in r.error
+
+    r2 = ManualBox({"center": [1, 2, 3]}).calculate(_ctx())  # falta 'size'
+    assert not r2.ok
 
 
 # ---------------------------------------------------------------- BlindBox
