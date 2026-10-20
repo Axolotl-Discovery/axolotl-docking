@@ -153,4 +153,4 @@ jobs:
             echo '```'
           } > /tmp/pr_comment_body.md
           gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
-            -f body=@/tmp/pr_comment_body.md || true
+            -F body=@/tmp/pr_comment_body.md || true
