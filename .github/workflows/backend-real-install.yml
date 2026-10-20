@@ -43,22 +43,31 @@ jobs:
         if: always()
         run: |
           MSG="$(tr '\r' '\n' < /tmp/instalar.log | tail -n 60 | sed ':a;N;$!ba;s/\n/%0A/g')"
-          echo "::notice title=instalar-tail::$MSG"
+          echo "::warning title=instalar-tail::$MSG"
 
       - name: Docking real con smina (tripsina + bencenamidina, PDB 3PTB)
         shell: bash
         run: |
           exec > >(tee /tmp/docking.log) 2>&1
-          set -euo pipefail
+          set -uo pipefail
           CONF="$HOME/.config/axolotl-docking/config.json"
+          echo "CHECKPOINT config.json:"; cat "$CONF" || echo "  (no existe)"
           CONDA_BASE="$(python3 -c "import json;print(json.load(open('$CONF'))['conda'])" | sed "s|^~|$HOME|")"
           ENV_NAME="$(python3 -c "import json;print(json.load(open('$CONF'))['entorno'])")"
           echo "CHECKPOINT conda_base=$CONDA_BASE env_name=$ENV_NAME"
+          ls -la "$CONDA_BASE/envs" || echo "CHECKPOINT no existe $CONDA_BASE/envs"
           # shellcheck disable=SC1091
           source "$CONDA_BASE/etc/profile.d/conda.sh"
+          conda env list
           conda activate "$ENV_NAME"
+          rc=$?
+          echo "CHECKPOINT conda activate rc=$rc"
+          if [ "$rc" != 0 ]; then
+            echo "CHECKPOINT activate falló, abortando con diagnóstico"; exit 1
+          fi
           export PATH="$CONDA_PREFIX/bin:$PATH:$HOME/tools/bin:$HOME/tools/ADFRsuite-1.0/bin"
           echo "CHECKPOINT conda activado, CONDA_PREFIX=$CONDA_PREFIX"
+          set -e
           set -x
 
           command -v smina >/dev/null || { echo "✘ smina no está en el PATH"; exit 1; }
@@ -108,4 +117,4 @@ jobs:
         if: always()
         run: |
           MSG="$(tr '\r' '\n' < /tmp/docking.log | tail -n 80 | sed ':a;N;$!ba;s/\n/%0A/g')"
-          echo "::notice title=docking-tail::$MSG"
+          echo "::warning title=docking-tail::$MSG"
