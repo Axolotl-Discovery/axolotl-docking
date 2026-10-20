@@ -42,8 +42,12 @@ jobs:
       - name: Diagnóstico · instalar_entorno.sh
         if: always()
         run: |
-          MSG="$(tail -c 4000 /tmp/instalar.log | sed ':a;N;$!ba;s/\n/%0A/g')"
-          echo "::notice::$MSG"
+          cd /tmp && split -l 25 -d instalar.log chunk_instalar_ 2>/dev/null || true
+          for f in chunk_instalar_*; do
+            [ -f "$f" ] || continue
+            MSG="$(sed ':a;N;$!ba;s/\n/%0A/g' "$f")"
+            echo "::notice title=instalar/$f::$MSG"
+          done
 
       - name: Docking real con smina (tripsina + bencenamidina, PDB 3PTB)
         shell: bash
@@ -105,5 +109,9 @@ jobs:
       - name: Diagnóstico · paso de docking
         if: always()
         run: |
-          MSG="$(tail -c 4000 /tmp/docking.log 2>/dev/null | sed ':a;N;$!ba;s/\n/%0A/g')"
-          echo "::notice::$MSG"
+          cd /tmp && split -l 25 -d docking.log chunk_dock_ 2>/dev/null || true
+          for f in chunk_dock_*; do
+            [ -f "$f" ] || continue
+            MSG="$(sed ':a;N;$!ba;s/\n/%0A/g' "$f")"
+            echo "::notice title=docking/$f::$MSG"
+          done
