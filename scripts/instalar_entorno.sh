@@ -123,8 +123,9 @@ if [ "$ES_MAC" = 1 ]; then
   elif [ -x "$TOOLS/bin/smina" ]; then
     ok "smina ya instalado: $TOOLS/bin/smina"
   elif ensure_rosetta \
-       && (CONDA_SUBDIR=osx-64 $SOLVER create -y -n "$SMINA_ENV" -c bioconda -c conda-forge --subdir osx-64 smina \
-           2>/dev/null || CONDA_SUBDIR=osx-64 $SOLVER create -n "$SMINA_ENV" -c bioconda -c conda-forge --subdir osx-64 smina); then
+       && (CONDA_SUBDIR=osx-64 $SOLVER create -y -n "$SMINA_ENV" -c bioconda -c conda-forge smina \
+           2>/dev/null || CONDA_SUBDIR=osx-64 $SOLVER create -n "$SMINA_ENV" -c bioconda -c conda-forge smina); then
+    conda activate "$SMINA_ENV" && conda config --env --set subdir osx-64 && conda deactivate
     cat > "$TOOLS/bin/smina" <<SMINA_WRAPPER
 #!/usr/bin/env bash
 # Generado por instalar_entorno.sh: smina vive en su propio conda-env (bioconda
