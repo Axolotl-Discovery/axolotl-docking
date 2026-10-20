@@ -42,26 +42,24 @@ jobs:
       - name: Diagnóstico · instalar_entorno.sh
         if: always()
         run: |
-          cd /tmp && split -l 25 -d instalar.log chunk_instalar_ 2>/dev/null || true
-          for f in chunk_instalar_*; do
-            [ -f "$f" ] || continue
-            MSG="$(sed ':a;N;$!ba;s/\n/%0A/g' "$f")"
-            echo "::notice title=instalar/$f::$MSG"
-          done
+          MSG="$(tr '\r' '\n' < /tmp/instalar.log | tail -n 60 | sed ':a;N;$!ba;s/\n/%0A/g')"
+          echo "::notice title=instalar-tail::$MSG"
 
       - name: Docking real con smina (tripsina + bencenamidina, PDB 3PTB)
         shell: bash
         run: |
           exec > >(tee /tmp/docking.log) 2>&1
-          set -x
           set -euo pipefail
           CONF="$HOME/.config/axolotl-docking/config.json"
           CONDA_BASE="$(python3 -c "import json;print(json.load(open('$CONF'))['conda'])" | sed "s|^~|$HOME|")"
           ENV_NAME="$(python3 -c "import json;print(json.load(open('$CONF'))['entorno'])")"
+          echo "CHECKPOINT conda_base=$CONDA_BASE env_name=$ENV_NAME"
           # shellcheck disable=SC1091
           source "$CONDA_BASE/etc/profile.d/conda.sh"
           conda activate "$ENV_NAME"
           export PATH="$CONDA_PREFIX/bin:$PATH:$HOME/tools/bin:$HOME/tools/ADFRsuite-1.0/bin"
+          echo "CHECKPOINT conda activado, CONDA_PREFIX=$CONDA_PREFIX"
+          set -x
 
           command -v smina >/dev/null || { echo "✘ smina no está en el PATH"; exit 1; }
           command -v prepare_receptor >/dev/null || { echo "✘ prepare_receptor (ADFRsuite) no está en el PATH"; exit 1; }
@@ -103,15 +101,11 @@ jobs:
 
           echo "── dock.log ──"; cat dock.log
           [ -s dock.sdf ] || { echo "✘ smina no produjo poses (dock.sdf vacío)"; exit 1; }
-          grep -q "Affinity" dock.log || { echo "✘ dock.log no tiene una afinidad calculada"; exit 1; }
+          grep -qi "affinity" dock.log || { echo "✘ dock.log no tiene una afinidad calculada"; exit 1; }
           echo "✔ Docking real OK en $(uname -s)/$(uname -m): smina + ADFRsuite funcionan de punta a punta."
 
       - name: Diagnóstico · paso de docking
         if: always()
         run: |
-          cd /tmp && split -l 25 -d docking.log chunk_dock_ 2>/dev/null || true
-          for f in chunk_dock_*; do
-            [ -f "$f" ] || continue
-            MSG="$(sed ':a;N;$!ba;s/\n/%0A/g' "$f")"
-            echo "::notice title=docking/$f::$MSG"
-          done
+          MSG="$(tr '\r' '\n' < /tmp/docking.log | tail -n 80 | sed ':a;N;$!ba;s/\n/%0A/g')"
+          echo "::notice title=docking-tail::$MSG"
