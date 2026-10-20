@@ -118,3 +118,14 @@ jobs:
         run: |
           MSG="$(tr '\r' '\n' < /tmp/docking.log | tail -n 80 | sed ':a;N;$!ba;s/\n/%0A/g')"
           echo "::warning title=docking-tail::$MSG"
+
+      - name: Subir logs completos como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}
+          path: |
+            /tmp/instalar.log
+            /tmp/docking.log
+          if-no-files-found: ignore
+          retention-days: 7
