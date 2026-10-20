@@ -5,7 +5,9 @@ name: Instalador real + docking real (Linux/macOS)
 # descargados de Internet) y después hace un docking real con smina sobre un
 # sistema clásico de tutorial (tripsina + bencenamidina, PDB 3PTB) para probar
 # que las "capas" A/B/C quedan funcionales de punta a punta — no sólo que el
-# script compila.
+# script compila. Verificado en macOS (Apple Silicon nativo) y Linux: ambos
+# producen poses reales con afinidades reales (ver el historial de este archivo
+# para la primera corrida exitosa).
 #
 # Es pesado (instala un entorno conda completo + ADFRsuite ≈ 500 MB) y en
 # macOS corre 10× más caro en minutos de Actions que en Linux, así que NO se
@@ -27,8 +29,6 @@ on:
 
 jobs:
   instalar-y-dockear:
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -41,35 +41,18 @@ jobs:
       - name: Correr scripts/instalar_entorno.sh (conda + smina + ADFRsuite reales)
         run: bash scripts/instalar_entorno.sh 2>&1 | tee /tmp/instalar.log
 
-      - name: Diagnóstico · instalar_entorno.sh
-        if: always()
-        run: |
-          MSG="$(tr '\r' '\n' < /tmp/instalar.log | tail -n 60 | sed ':a;N;$!ba;s/\n/%0A/g')"
-          echo "::warning title=instalar-tail::$MSG"
-
       - name: Docking real con smina (tripsina + bencenamidina, PDB 3PTB)
         shell: bash
         run: |
           exec > >(tee /tmp/docking.log) 2>&1
-          set -uo pipefail
+          set -euo pipefail
           CONF="$HOME/.config/axolotl-docking/config.json"
-          echo "CHECKPOINT config.json:"; cat "$CONF" || echo "  (no existe)"
           CONDA_BASE="$(python3 -c "import json;print(json.load(open('$CONF'))['conda'])" | sed "s|^~|$HOME|")"
           ENV_NAME="$(python3 -c "import json;print(json.load(open('$CONF'))['entorno'])")"
-          echo "CHECKPOINT conda_base=$CONDA_BASE env_name=$ENV_NAME"
-          ls -la "$CONDA_BASE/envs" || echo "CHECKPOINT no existe $CONDA_BASE/envs"
           # shellcheck disable=SC1091
           source "$CONDA_BASE/etc/profile.d/conda.sh"
-          conda env list
           conda activate "$ENV_NAME"
-          rc=$?
-          echo "CHECKPOINT conda activate rc=$rc"
-          if [ "$rc" != 0 ]; then
-            echo "CHECKPOINT activate falló, abortando con diagnóstico"; exit 1
-          fi
           export PATH="$CONDA_PREFIX/bin:$PATH:$HOME/tools/bin:$HOME/tools/ADFRsuite-1.0/bin"
-          echo "CHECKPOINT conda activado, CONDA_PREFIX=$CONDA_PREFIX"
-          set -e
           set -x
 
           command -v smina >/dev/null || { echo "✘ smina no está en el PATH"; exit 1; }
@@ -115,14 +98,11 @@ jobs:
           grep -qi "affinity" dock.log || { echo "✘ dock.log no tiene una afinidad calculada"; exit 1; }
           echo "✔ Docking real OK en $(uname -s)/$(uname -m): smina + ADFRsuite funcionan de punta a punta."
 
-      - name: Diagnóstico · paso de docking
-        if: always()
-        run: |
-          MSG="$(tr '\r' '\n' < /tmp/docking.log | tail -n 80 | sed ':a;N;$!ba;s/\n/%0A/g')"
-          echo "::warning title=docking-tail::$MSG"
-
-      - name: Subir logs completos como artefacto
-        if: always()
+      # Si algo falla, estos logs completos quedan como artefacto descargable
+      # desde la pestaña Actions del run (90 días) — más fácil de inspeccionar
+      # que desenredar las anotaciones truncadas de un paso fallido.
+      - name: Subir logs si algo falló
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ matrix.os }}
@@ -130,27 +110,4 @@ jobs:
             /tmp/instalar.log
             /tmp/docking.log
           if-no-files-found: ignore
-          retention-days: 7
-
-      # Las anotaciones (::notice::/::warning::) vienen llegando truncadas/perdidas
-      # por alguna razón no clara, y el sandbox de desarrollo no puede bajar logs
-      # completos ni artefactos (proxy bloquea esos hosts). Como alternativa
-      # confiable: publicar el log completo como comentario del commit, que se
-      # lee por la API normal de GitHub (api.github.com, sí accesible).
-      - name: Publicar log completo en un comentario del commit (debug)
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          {
-            echo "### backend-real-install · ${{ matrix.os }} (run ${{ github.run_id }})"
-            echo '```'
-            echo "--- instalar.log (últimas 200 líneas) ---"
-            tail -n 200 /tmp/instalar.log 2>/dev/null | tr -d '\000'
-            echo
-            echo "--- docking.log (completo) ---"
-            cat /tmp/docking.log 2>/dev/null | tr -d '\000'
-            echo '```'
-          } > /tmp/pr_comment_body.md
-          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
-            -F body=@/tmp/pr_comment_body.md || true
+          retention-days: 14
