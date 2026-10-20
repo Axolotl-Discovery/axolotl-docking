@@ -105,7 +105,8 @@ class AgregarDianaDialog(QDialog):
             return
         hit = item.data(1)
         self.result_target = {"id": hit.pdb_id, "source": "pdb", "name": hit.title or hit.pdb_id,
-                               "pdb": hit.pdb_id, "chains": "auto", "cofactors": "auto"}
+                               "pdb": hit.pdb_id, "chains": "auto", "cofactors": "auto",
+                               "box": {"mode": "auto"}}
         self.accept()
 
     # ---------------------------------------------------------------- PDB ID
@@ -129,7 +130,7 @@ class AgregarDianaDialog(QDialog):
             return
         name = self.pdb_name.text().strip() or pdb
         self.result_target = {"id": name, "source": "pdb", "name": name, "pdb": pdb,
-                               "chains": "auto", "cofactors": "auto"}
+                               "chains": "auto", "cofactors": "auto", "box": {"mode": "auto"}}
         self.accept()
 
     # ---------------------------------------------------------------- UniProt/AlphaFold
@@ -153,7 +154,7 @@ class AgregarDianaDialog(QDialog):
             return
         name = self.uniprot_name.text().strip() or up
         self.result_target = {"id": name, "source": "alphafold", "name": name, "uniprot": up,
-                               "chains": "auto", "cofactors": "auto"}
+                               "chains": "auto", "cofactors": "auto", "box": {"mode": "auto"}}
         self.accept()
 
     # ---------------------------------------------------------------- archivo local
@@ -188,5 +189,5 @@ class AgregarDianaDialog(QDialog):
             return
         name = self.file_name.text().strip() or os.path.splitext(os.path.basename(path))[0]
         self.result_target = {"id": name, "source": "file", "name": name, "file": path,
-                               "chains": "auto", "cofactors": "auto"}
+                               "chains": "auto", "cofactors": "auto", "box": {"mode": "auto"}}
         self.accept()

@@ -69,7 +69,10 @@ def _resolver_auto(d, crudo):
     if d.get("cofactors") == "auto":
         d["cofactors"] = sorted({f"{h[0]}:{h[1]}" for h in het
                                  if h[0] in COFACTOR_CODES | METAL_CODES and (not d["chains"] or h[1] in d["chains"])})
-    if d.get("box", {}).get("mode") == "auto":
+    # Un box ausente se trata como "auto" (una diana añadida desde la GUI puede no
+    # traer la clave 'box'); un box con modo explícito (ligand/blind/residues/manual)
+    # nunca cae aquí porque siempre tiene 'mode'.
+    if d.get("box", {}).get("mode") in (None, "auto"):
         d["box"] = ({"mode": "ligand", "ref": ref, "margin": 10.0, "minimum": 22.0, "auto": True} if ref
                     else {"mode": "blind", "margin": 10.0, "auto": True})
     log(f"    automático → cadena {d['chains'] or 'todas'}"
