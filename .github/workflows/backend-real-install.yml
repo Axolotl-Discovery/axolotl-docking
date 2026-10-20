@@ -37,11 +37,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Correr scripts/instalar_entorno.sh (conda + smina + ADFRsuite reales)
-        run: bash scripts/instalar_entorno.sh
+        run: bash scripts/instalar_entorno.sh 2>&1 | tee /tmp/instalar.log
+
+      - name: Diagnóstico · instalar_entorno.sh
+        if: always()
+        run: |
+          MSG="$(tail -c 4000 /tmp/instalar.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+          echo "::notice::$MSG"
 
       - name: Docking real con smina (tripsina + bencenamidina, PDB 3PTB)
         shell: bash
         run: |
+          exec > >(tee /tmp/docking.log) 2>&1
+          set -x
           set -euo pipefail
           CONF="$HOME/.config/axolotl-docking/config.json"
           CONDA_BASE="$(python3 -c "import json;print(json.load(open('$CONF'))['conda'])" | sed "s|^~|$HOME|")"
@@ -93,3 +101,9 @@ jobs:
           [ -s dock.sdf ] || { echo "✘ smina no produjo poses (dock.sdf vacío)"; exit 1; }
           grep -q "Affinity" dock.log || { echo "✘ dock.log no tiene una afinidad calculada"; exit 1; }
           echo "✔ Docking real OK en $(uname -s)/$(uname -m): smina + ADFRsuite funcionan de punta a punta."
+
+      - name: Diagnóstico · paso de docking
+        if: always()
+        run: |
+          MSG="$(tail -c 4000 /tmp/docking.log 2>/dev/null | sed ':a;N;$!ba;s/\n/%0A/g')"
+          echo "::notice::$MSG"
