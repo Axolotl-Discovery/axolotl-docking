@@ -5,6 +5,8 @@ import os
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLineEdit,
                                QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
+from ... import layout as L
+
 
 class AgregarLigandoDialog(QDialog):
     """Fuentes ya soportadas por el pipeline (axd.domain.sources.PubchemLigandSource /
@@ -47,7 +49,7 @@ class AgregarLigandoDialog(QDialog):
         if not q:
             return
         name = self.name1.text().strip() or q.split()[0]
-        self.result_ligand = {"id": name, "name": name, "source": "pubchem", "query": q}
+        self.result_ligand = {"id": L.sanitize_id(name), "name": name, "source": "pubchem", "query": q}
         self.accept()
 
     def _smiles_tab(self) -> QWidget:
@@ -69,7 +71,7 @@ class AgregarLigandoDialog(QDialog):
         name = self.name2.text().strip()
         if not smi or not name:
             return
-        self.result_ligand = {"id": name, "name": name, "source": "smiles", "smiles": smi}
+        self.result_ligand = {"id": L.sanitize_id(name), "name": name, "source": "smiles", "smiles": smi}
         self.accept()
 
     def _file_tab(self) -> QWidget:
@@ -103,5 +105,5 @@ class AgregarLigandoDialog(QDialog):
         name = self.name3.text().strip() or (os.path.splitext(os.path.basename(path))[0] if path else "")
         if not path or not name:
             return
-        self.result_ligand = {"id": name, "name": name, "source": "file", "file": path}
+        self.result_ligand = {"id": L.sanitize_id(name), "name": name, "source": "file", "file": path}
         self.accept()

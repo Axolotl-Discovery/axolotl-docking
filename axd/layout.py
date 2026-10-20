@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import shutil
 import time
+import unicodedata
 from dataclasses import dataclass
 
 CURRENT_LAYOUT_VERSION = 2          # 1 = legacy Spanish layout (implicit), 2 = English layout
@@ -59,7 +61,17 @@ class Layout:
         self.root = os.path.abspath(self.root)
 
     def r(self, *parts: str) -> str:
-        return os.path.join(self.root, *parts)
+        """Join `parts` onto the project root. Every path method in this class goes
+        through here, so this is also the one place that guards against a hostile
+        id/path component (a target or ligand `id` with '..' or an absolute path)
+        escaping the project directory — see `sanitize_id()` below, which is what
+        keeps ids from reaching here in that shape in the first place."""
+        path = os.path.join(self.root, *parts)
+        norm, root_norm = os.path.normpath(path), os.path.normpath(self.root)
+        if norm != root_norm and not norm.startswith(root_norm + os.sep):
+            raise ValueError(
+                f"ruta fuera del proyecto: {path!r} (un id/ruta con '..' o absoluto se coló sin sanear)")
+        return path
 
     def rel(self, path: str) -> str:
         return os.path.relpath(path, self.root)
@@ -211,6 +223,60 @@ class Layout:
 
     def report_dir(self) -> str:
         return self.r("07_Report")
+
+
+# ---------------------------------------------------------------- id safety
+# A target/ligand/control `id` ends up interpolated into file names all over this
+# class (receptor_pdbqt, ligand_pdbqt, result_pdbqt, complex_base, ...). An id is
+# meant to be a short code the user/UI picks (or a PDB ID), never a path — but
+# nothing historically stopped one from containing '..' or acting like an
+# absolute path once interpolated (e.g. an id of "/etc/passwd" makes
+# f"{id}.pdbqt" joined via os.path.join silently discard the project root).
+# sanitize_id() is the one place that turns arbitrary text into a safe path
+# component; Layout.r()'s containment check above is the backstop in case an
+# unsafe id reaches here anyway (an old project, a hand-edited axd.json, a
+# future caller that forgets to sanitize).
+def sanitize_id(text: str) -> str:
+    """Same rules as axd.ui.nombre_seguro() (kept independently here so this
+    path-safety module has no dependency on the terminal-UI module): strip
+    accents, keep only [A-Za-z0-9._+-], collapse everything else to '_'.
+    Idempotent: sanitize_id(x) == x already for any id that was already safe."""
+    t = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    t = re.sub(r"[^A-Za-z0-9._+-]+", "_", t.strip()).strip("_")
+    return t or "sin_nombre"
+
+
+def _unique(base: str, taken: set[str]) -> str:
+    if base not in taken:
+        return base
+    i = 2
+    while f"{base}_{i}" in taken:
+        i += 1
+    return f"{base}_{i}"
+
+
+def ensure_safe_ids(project_dict: dict) -> tuple[bool, dict]:
+    """Re-derive any target/ligand/control id that isn't already a safe path
+    component (sanitize_id(id) != id — e.g. it contains '/', '..', or came in
+    unsanitized from a GUI dialog or a hand-edited/shared axd.json), keeping
+    the result unique. Returns (changed, project_dict); the caller persists it
+    the same way it does after migrate_in_place()/migrate_schema_to_english().
+
+    Two passes so order never matters: first collect every id that is ALREADY
+    safe (so a later fix can't collide with it), then fix the unsafe ones —
+    each fix also joins `taken`, so two unsafe ids that would sanitize to the
+    same thing still end up unique."""
+    items = [item for key in ("targets", "ligands", "controls") for item in project_dict.get(key, [])]
+    taken = {str(item.get("id", "")) for item in items if sanitize_id(str(item.get("id", ""))) == item.get("id")}
+    changed = False
+    for item in items:
+        old = str(item.get("id", ""))
+        if sanitize_id(old) != old:
+            new = _unique(sanitize_id(old), taken)
+            item["id"] = new
+            taken.add(new)
+            changed = True
+    return changed, project_dict
 
 
 # ---------------------------------------------------------------- migration
