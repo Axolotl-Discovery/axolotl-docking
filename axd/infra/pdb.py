@@ -17,19 +17,20 @@ def inspect_pdb(path):
     if not path.lower().endswith(".pdb"):
         return chains, []
     seen = set()
-    for l in open(path, errors="ignore"):
-        if l.startswith("ENDMDL"):
-            break
-        if l[:6] == "ATOM  ":
-            k = (l[21], l[22:27])
-            if k not in seen:
-                seen.add(k); chains[l[21]] = chains.get(l[21], 0) + 1
-        elif l[:6] == "HETATM":
-            rn = l[17:20].strip()
-            if rn in WATERS:
-                continue
-            k = (rn, l[21], l[22:26].strip())
-            het[k] = het.get(k, 0) + 1
+    with open(path, errors="ignore") as fh:
+        for l in fh:
+            if l.startswith("ENDMDL"):
+                break
+            if l[:6] == "ATOM  ":
+                k = (l[21], l[22:27])
+                if k not in seen:
+                    seen.add(k); chains[l[21]] = chains.get(l[21], 0) + 1
+            elif l[:6] == "HETATM":
+                rn = l[17:20].strip()
+                if rn in WATERS:
+                    continue
+                k = (rn, l[21], l[22:26].strip())
+                het[k] = het.get(k, 0) + 1
     return chains, [(k[0], k[1], k[2], n) for k, n in het.items()]
 
 

@@ -59,6 +59,14 @@ def _spec(texto):
     return a[0], (a[1] if len(a) > 1 and a[1] else None)
 
 
+def _necesita_auto(d):
+    """True si algún campo pide decisión automática. Un 'box' ausente cuenta como
+    "auto" también cuando chains/cofactors vienen explícitos: así no cae en silencio
+    a docking ciego."""
+    return ("auto" in (d.get("chains"), d.get("cofactors"))
+            or d.get("box", {}).get("mode") in (None, "auto"))
+
+
 def _resolver_auto(d, crudo):
     """Modo básico: decide cadena, cofactores y caja a partir de la estructura."""
     from axd.infra.pdb import COFACTOR_CODES, METAL_CODES, auto_decision, inspect_pdb
@@ -105,7 +113,7 @@ def run(P, rehacer=False):
         tmp = tmp_dir("rec")
         try:
             crudo = _a_pdb(P.r(d["file"]), tmp)
-            if "auto" in (d.get("chains"), d.get("cofactors"), d.get("box", {}).get("mode")):
+            if _necesita_auto(d):
                 _resolver_auto(d, crudo)
                 cambios = True
             cadenas = set(d.get("chains") or "")
@@ -190,7 +198,8 @@ def run(P, rehacer=False):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    json.dump(boxes, open(P.layout.boxes_json(), "w"), indent=2)
+    with open(P.layout.boxes_json(), "w", encoding="utf-8") as fh:
+        json.dump(boxes, fh, indent=2)
     if cambios:
         P.save()  # guarda lo que se decidió automáticamente (cadenas, cofactores, caja)
     log(f"\n  Receptores: {len(P.cfg['targets']) - fallos}/{len(P.cfg['targets'])} listos · "
