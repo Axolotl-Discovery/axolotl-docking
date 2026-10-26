@@ -43,8 +43,9 @@ El pipeline completo (simulaciones incluidas) corre en macOS, con una sola salve
   build nativo `arm64` todavía, el instalador reintenta una vez forzando todo el entorno a `osx-64`
   antes de rendirse.
 - **Intel:** no necesita nada especial, todas las capas tienen build nativo.
-- Verificado de punta a punta (conda + smina + ADFRsuite reales, con un docking real) en CI sobre
-  `macos-latest` — ver [`.github/workflows/backend-real-install.yml`](.github/workflows/backend-real-install.yml).
+- Esta ruta se verificó de punta a punta (conda + smina + ADFRsuite reales, con un docking real)
+  en CI sobre `macos-latest`, pero **macOS ya no está en los workflows**: los runners de macOS
+  consumen minutos de Actions a ×10. Hoy se prueba a mano en una Mac propia.
 
 Si en esa PC ya tienes un entorno llamado `axolotl-Docking` o `axolot-Docking`, el instalador lo detecta y lo reutiliza (sólo le añade lo que falte). Es seguro volver a correrlo.
 
@@ -208,18 +209,17 @@ Lo que necesita binarios/paquetes reales (smina, ADFRsuite, RDKit, Open Babel) s
 verificando a mano, corriendo el pipeline sobre un proyecto de prueba dentro del entorno
 conda (`env/environment.yml`, que ya incluye `pytest` para correr la suite ahí también).
 
-Hay además dos workflows de GitHub Actions:
+Hay además dos workflows de GitHub Actions. **Ninguno corre automáticamente**: para no
+generar gasto, ambos son sólo manuales (`workflow_dispatch`), y las pruebas se corren en
+entornos propios (`pytest` y `QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py`).
 
 - [`gui-smoke.yml`](.github/workflows/gui-smoke.yml): arranca la GUI (PySide6, sin entorno
-  gráfico real) en Linux, macOS y Windows en cada push — prueba que la ventana y las 6 pestañas
-  funcionan igual en los tres sistemas.
+  gráfico real) en Linux y Windows — prueba que la ventana y las 6 pestañas funcionan.
 - [`backend-real-install.yml`](.github/workflows/backend-real-install.yml): corre
   `scripts/instalar_entorno.sh` de verdad (conda + smina + ADFRsuite reales, descargados de
-  Internet) en Linux y macOS, y hace un **docking real** con smina sobre un sistema clásico de
+  Internet) en Linux, y hace un **docking real** con smina sobre un sistema clásico de
   tutorial (tripsina + bencenamidina, PDB 3PTB) para probar que las tres capas quedan
-  funcionales de punta a punta — no sólo que el instalador compila. Es pesado, así que no corre
-  en cada push: sólo a mano (`workflow_dispatch`) o cuando cambian los propios scripts de
-  instalación.
+  funcionales de punta a punta — no sólo que el instalador compila.
 
 ## Notas
 
