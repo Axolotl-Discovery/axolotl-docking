@@ -86,6 +86,26 @@ def _env(proy):
     return e
 
 
+def resumen_problemas(lineas):
+    """Líneas con ✘ del log, cada una precedida por el paso ('━━ N · ...') y la diana
+    ('▸ id') donde ocurrió. Sirve para que un fallo temprano (p. ej. en receptores)
+    no quede oculto cuando sólo se muestran las últimas líneas del log."""
+    out, paso, item, mostrado = [], None, None, set()
+    for l in lineas:
+        s = l.strip()
+        if s.startswith("━━"):
+            paso, item = s.strip("━ ").strip(), None
+        elif s.startswith("▸"):
+            item = s
+        elif "✘" in s:
+            for ctx in (paso, item):
+                if ctx and (paso, ctx) not in mostrado:
+                    mostrado.add((paso, ctx))
+                    out.append(f"  {ctx}\n" if ctx == paso else f"    {ctx}\n")
+            out.append(f"      {s}\n")
+    return out
+
+
 def ejecutar(proy, pasos, fondo=True, extra=None):
     """Lanza run.py con los pasos indicados. En fondo: sobrevive a cerrar el menú."""
     if not pasos:
@@ -111,8 +131,16 @@ def ejecutar(proy, pasos, fondo=True, extra=None):
                   open(_estado_file(proy), "w"), indent=2)
         time.sleep(1.5)
         if p.poll() is not None and p.returncode != 0:
-            ui.error(f"El trabajo terminó de inmediato (código {p.returncode}). Últimas líneas del log:")
-            print(ui.gris("".join(open(log).readlines()[-15:])))
+            with open(log, encoding="utf-8", errors="replace") as fh:
+                lineas = fh.readlines()
+            ui.error(f"El trabajo terminó de inmediato (código {p.returncode}).")
+            problemas = resumen_problemas(lineas)
+            if problemas:
+                print(ui.rojo("  Problemas encontrados (en orden):"))
+                print("".join(problemas))
+            print(ui.gris("  Últimas líneas del log:"))
+            print(ui.gris("".join(lineas[-15:])))
+            ui.info(f"Log completo: {os.path.relpath(log, proy)}")
             return
         ui.ok(f"Trabajo lanzado en segundo plano (PID {p.pid}).")
         ui.info(f"Log: {os.path.relpath(log, proy)}")

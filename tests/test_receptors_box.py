@@ -39,3 +39,28 @@ def test_necesita_auto():
     assert receptors._necesita_auto({"chains": "auto", "cofactors": [], "box": {"mode": "blind"}})
     assert receptors._necesita_auto({"chains": ["A"], "cofactors": [], "box": {"mode": "auto"}})
     assert not receptors._necesita_auto({"chains": ["A"], "cofactors": [], "box": {"mode": "blind"}})
+
+
+def test_modo_ligand_sin_ref_detecta_el_ligando(tmp_path):
+    cfg = {"mode": "ligand", "margin": 10}  # así lo guarda el panel "Caja de docking"
+    assert receptors._completar_ref(cfg, _pdb(tmp_path, con_ligando=True))
+    assert cfg["ref"].startswith("BEN")
+
+
+def test_modo_ligand_sin_ref_y_sin_ligando_falla_limpio(tmp_path):
+    cfg = {"mode": "ligand", "margin": 10}
+    assert not receptors._completar_ref(cfg, _pdb(tmp_path, con_ligando=False))
+    assert "ref" not in cfg
+
+
+def test_caja_ciega_ignora_lineas_ter():
+    """Regresión: 'could not convert string to float' con 3OG7 en modo blind."""
+    from axd.domain.boxes import Box, BoxContext
+    cuerpo = [linea_pdb(i, " CA ", "ALA", "A", i, float(i), 0.0, 0.0) for i in range(1, 6)]
+    cuerpo.append("TER       6      ALA A   5\n")
+    cuerpo += [linea_pdb(7 + i, " CA ", "GLY", "B", i, 0.0, float(i), 0.0) for i in range(1, 4)]
+    cuerpo.append("TER\n")
+    r = Box.create({"mode": "blind", "margin": 10}).calculate(
+        BoxContext(body=cuerpo, cofactors=[], ref=[], box_fn=receptors._caja, xyz_fn=receptors._xyz))
+    assert r.ok and len(r.center) == 3
+    assert len(receptors._xyz(cuerpo)) == 8  # 5 + 3 átomos, sin los TER
