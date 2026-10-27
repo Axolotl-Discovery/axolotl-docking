@@ -25,8 +25,14 @@ import tempfile
 def main() -> int:
     os.environ.setdefault("AXD_CONFIG_DIR", tempfile.mkdtemp(prefix="axd_gui_smoke_config_"))
 
+    from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtWidgets import QApplication
 
+    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    try:
+        import PySide6.QtWebEngineWidgets  # noqa: F401
+    except ImportError:
+        pass
     app = QApplication.instance() or QApplication([])
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
