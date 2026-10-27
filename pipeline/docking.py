@@ -8,6 +8,8 @@ CPU/GPU se calienta demasiado. El guardia nunca interrumpe un smina/AutoDock4 en
 curso (no se puede); sólo decide si se lanza la siguiente corrida."""
 import concurrent.futures as cf
 import csv
+import dataclasses
+import glob
 import os
 import shutil
 import time
@@ -15,7 +17,9 @@ import time
 import numpy as np
 
 from common import affinity, is_complete, run_cmd, tmp_dir, tool, log, pose1_pdb, title
+from axd import device as DEV
 from axd.thermal import Decision
+import vina_gpu
 
 
 def _smina():
@@ -65,17 +69,29 @@ def rmsd_simetrico(pose_pdbqt, ref_noH):
 
 # ---------------------------------------------------------------- motor (smina o AutoDock4)
 class Motor:
-    """Decide el motor del proyecto: smina por defecto; AutoDock4 si algún ligando tiene átomos que
-    smina no conoce (V, Pt, Ru…) o si el proyecto lo pide. Se usa el MISMO motor para todo el proyecto
-    (ligandos, controles y redocking) para que las energías sean comparables."""
+    """Decide el motor del proyecto: smina en CPU por defecto; Vina-GPU si el dispositivo
+    elegido es la GPU (Entorno → Dispositivo); AutoDock4 si algún ligando tiene átomos que
+    smina/Vina no conocen (V, Pt, Ru…) o si el proyecto lo pide. Se usa el MISMO motor para todo
+    el proyecto (ligandos, controles y redocking) para que las energías sean comparables."""
 
     def __init__(self, P, ligandos_pdbqt):
         import metals
+        from axd.config import load_global
         self.P, self.m = P, metals
+        g = load_global()
         pedido = P.cfg["docking"].get("motor", "smina")
+        dispositivo = P.cfg["docking"].get(DEV.DEVICE_KEY) or DEV.get_device(g)
         raros = [p for p in ligandos_pdbqt if os.path.exists(p) and metals.necesita_ad4(p)]
-        self.nombre = "ad4" if (pedido == "ad4" or raros) else "smina"
+        if pedido == "ad4" or raros:
+            self.nombre = "ad4"
+            if dispositivo == DEV.GPU:
+                log("  ⚠ Se pidió GPU, pero AutoDock4 (necesario aquí) sólo corre en CPU.")
+        elif dispositivo == DEV.GPU:
+            self.nombre = "vina-gpu"
+        else:
+            self.nombre = "smina"
         self.smina = _smina()
+        self.vgpu = DEV.vina_gpu_variants(g) if self.nombre == "vina-gpu" else {}
         self.param = None
         if self.nombre == "ad4":
             tipos = set()
@@ -93,15 +109,47 @@ class Motor:
     def disponible(self):
         if self.nombre == "smina" and not self.smina:
             log("  ✘ smina no está instalado. Corre:  Docking entorno"); return False
+        if self.nombre == "vina-gpu" and not self.vgpu:
+            log("  ✘ Se eligió GPU pero Vina-GPU no está instalado. Instálalo en Entorno (o corre "
+                "scripts/instalar_vina_gpu.sh), o cambia el dispositivo a CPU."); return False
+        return self.consistente()
+
+    def consistente(self):
+        """No mezclar motores en un proyecto: si ya hay resultados de docking/redocking hechos con
+        otro motor, se para y se explica cómo rehacerlo. Proyectos anteriores a este registro no
+        tienen 'motor_usado': se asume que sus resultados son de CPU (smina/AutoDock4)."""
+        d = self.P.cfg["docking"]
+        usado = d.get("motor_usado")
+        hay = _hay_resultados(self.P)
+        if hay and usado and usado != self.nombre or hay and not usado and self.nombre == "vina-gpu":
+            previo = usado or "CPU (smina/AutoDock4)"
+            log(f"  ✘ Este proyecto ya tiene resultados con {previo} y ahora se usaría {self.nombre}. Para que las "
+                "energías sean comparables no se mezclan motores: elimina el último procesamiento (Proceso → "
+                "«Eliminar último procesamiento», guarda la copia .zip) y vuelve a correr, o regresa al dispositivo "
+                "anterior en Entorno.")
+            return False
+        if d.get("motor_usado") != self.nombre and not hay:
+            d["motor_usado"] = self.nombre
+            self.P.save()
         return True
 
+    def ajustar_plan(self, rp):
+        """Una sola GPU: las corridas de Vina-GPU van de una en una."""
+        if self.nombre != "vina-gpu":
+            return rp
+        return dataclasses.replace(rp, max_workers=1, notes=list(rp.notes) + ["GPU: una corrida a la vez."])
+
     def etiqueta(self, d):
+        if self.nombre == "vina-gpu":
+            return vina_gpu.etiqueta(d)
         return (f"exhaustiveness {d['exhaustiveness']}" if self.nombre == "smina"
                 else f"AutoDock4 · {d.get('ad4_runs', 20)} corridas GA × {int(d.get('ad4_evals', 2500000)):,} evaluaciones")
 
     def dockear(self, diana_id, rec, lig, caja, salida, semilla, d, rehacer=False):
         if self.nombre == "smina":
             return correr_smina(self.smina, rec, lig, caja, salida, semilla, d, rehacer)
+        if self.nombre == "vina-gpu":
+            return vina_gpu.correr(self.vgpu, rec, lig, caja, salida, semilla, d, rehacer)
         if is_complete(salida) and not rehacer:
             return affinity(salida), True
         os.makedirs(os.path.dirname(salida), exist_ok=True)
@@ -114,6 +162,14 @@ class Motor:
         if e is None:
             log(f"      ✘ AutoDock4 no produjo poses (ver {os.path.basename(salida)[:-6]}.log)")
         return e, False
+
+
+def _hay_resultados(P):
+    """¿Hay alguna salida de docking (pasos 5–7) completa? El redocking (validación de pose)
+    no cuenta: se conserva al «Eliminar último procesamiento» y no bloquea cambiar de motor."""
+    red = os.path.basename(P.layout.redocking_results_dir())
+    return any(is_complete(f) for f in glob.glob(os.path.join(P.layout.results_dir(), "*", "*.pdbqt"))
+               if os.path.basename(os.path.dirname(f)) != red)
 
 
 # ---------------------------------------------------------------- Fase 6: paralelización real
@@ -217,6 +273,7 @@ def redocking(P, rehacer=False):
     filas = []
     if jobs:
         rp, guard = _plan_recursos(P, len(jobs))
+        rp = motor.ajustar_plan(rp)
         _log_plan(rp, motor.etiqueta(d))
         for job, (e, previa) in _ejecutar_en_pool(jobs, _correr_redocking, rp, guard):
             diana = job["diana"]
@@ -303,6 +360,7 @@ def matrix(P, rehacer=False):
     t0, nuevas, fallos = time.time(), 0, 0
     if jobs:
         rp, guard = _plan_recursos(P, total - hechas)
+        rp = motor.ajustar_plan(rp)
         _log_plan(rp, motor.etiqueta(d))
         for job, (e, previa) in _ejecutar_en_pool(jobs, lambda j: _correr_matriz(j, rp), rp, guard):
             diana, lig, ctrl = job["diana"], job["lig"], job["ctrl"]

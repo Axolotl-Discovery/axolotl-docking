@@ -121,6 +121,9 @@ def _fake_motor_cls(tracker, fallo_en=None):
         def etiqueta(self, d):
             return "motor de prueba"
 
+        def ajustar_plan(self, rp):  # motor de CPU: el plan no cambia
+            return rp
+
         def dockear(self, diana_id, rec, lig, caja, salida, semilla, d, rehacer=False):
             tracker.entrar((diana_id, lig, semilla))
             try:

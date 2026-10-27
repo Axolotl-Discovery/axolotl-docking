@@ -2,15 +2,21 @@
 con barra de progreso en cortes de 10% y checkpoints automáticos."""
 from __future__ import annotations
 
+import os
+
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QProgressBar,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+                               QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
 from ... import config as C
 from ... import runner as R
 from ..dialogs.calibracion_dialog import CalibracionDialog
 from ..dialogs.restaurar_checkpoint_dialog import RestaurarCheckpointDialog
-from ..services import calibration, checkpoints as CK, compute_profile
+from ..services import calibration, checkpoints as CK, compute_profile, reset_run
+
+
+def _tamano(n_bytes: int) -> str:
+    return f"{n_bytes / 1e6:.1f} MB" if n_bytes >= 1e6 else f"{max(1, round(n_bytes / 1e3))} KB"
 
 
 class ProcesoTab(QWidget):
@@ -26,7 +32,7 @@ class ProcesoTab(QWidget):
         title.setObjectName("Title")
         layout.addWidget(title)
 
-        self.status_label = QLabel("Abrí un proyecto para ver su avance.")
+        self.status_label = QLabel("Abre un proyecto para ver su avance.")
         self.status_label.setObjectName("Muted")
         layout.addWidget(self.status_label)
 
@@ -71,6 +77,22 @@ class ProcesoTab(QWidget):
         self.checkpoints_list.setMaximumHeight(140)
         layout.addWidget(self.checkpoints_list)
 
+        last_row = QHBoxLayout()
+        last_title = QLabel("Último procesamiento")
+        last_title.setObjectName("Title")
+        last_row.addWidget(last_title)
+        last_row.addStretch(1)
+        self.delete_btn = QPushButton("Eliminar último procesamiento…")
+        self.delete_btn.setObjectName("Danger")
+        self.delete_btn.clicked.connect(self._delete_last)
+        last_row.addWidget(self.delete_btn)
+        layout.addLayout(last_row)
+        self.last_label = QLabel("")
+        self.last_label.setObjectName("Muted")
+        self.last_label.setWordWrap(True)
+        layout.addWidget(self.last_label)
+        layout.addStretch(1)
+
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(5000)
         self._poll_timer.timeout.connect(self._tick)
@@ -112,10 +134,10 @@ class ProcesoTab(QWidget):
             return
         p = C.load_project(proy)
         if not p["targets"]:
-            QMessageBox.warning(self, "Falta configurar", "Agregá al menos una diana en Análisis.")
+            QMessageBox.warning(self, "Falta configurar", "Agrega al menos una diana en Proyecto → Dianas.")
             return
         if not p["ligands"] and not p["controls"]:
-            QMessageBox.warning(self, "Falta configurar", "Agregá al menos un ligando en Análisis.")
+            QMessageBox.warning(self, "Falta configurar", "Agrega al menos un ligando en Proyecto → Ligandos y controles.")
             return
         p["docking"] = compute_profile.apply_to_docking_params(p["docking"])
         C.save_project(proy, p)
@@ -151,10 +173,12 @@ class ProcesoTab(QWidget):
     def refresh(self) -> None:
         proy = self._project()
         if not proy:
-            self.status_label.setText("Abrí un proyecto para ver su avance.")
+            self.status_label.setText("Abre un proyecto para ver su avance.")
             self.progress.setValue(0)
             self.eta_label.setText("")
             self.checkpoints_list.clear()
+            self.last_label.setText("")
+            self.delete_btn.setEnabled(False)
             return
         e = R.estado(proy)
         done, total = CK.progress_fraction(proy)
@@ -171,6 +195,58 @@ class ProcesoTab(QWidget):
             self.resume_btn.setEnabled(True)
         self._update_eta(proy, done, total, running=bool(e and e.get("vivo")))
         self._refresh_checkpoints()
+        self._refresh_last(proy, running=bool(e and e.get("vivo")))
+
+    def _refresh_last(self, proy, running: bool) -> None:
+        s = reset_run.summary(proy)
+        if not s["n_files"]:
+            self.last_label.setText("No hay resultados de docking/análisis que eliminar.")
+        else:
+            self.last_label.setText(
+                f"{s['n_files']} archivos ({_tamano(s['bytes'])}) de docking, resumen e interacciones (pasos 5–7). "
+                "Al eliminarlos se guarda antes una copia .zip; los receptores y ligandos preparados se conservan."
+                + ("  · Detén el trabajo en curso para poder eliminar." if running else ""))
+        self.delete_btn.setEnabled(bool(s["n_files"]) and not running)
+
+    def _delete_last(self) -> None:
+        proy = self._project()
+        if not proy:
+            return
+        e = R.estado(proy)
+        if e and e.get("vivo"):
+            QMessageBox.information(self, "Trabajo en curso", "Detén el trabajo antes de eliminar el procesamiento.")
+            return
+        s = reset_run.summary(proy)
+        if not s["n_files"]:
+            QMessageBox.information(self, "Nada que eliminar", "No hay resultados de docking/análisis.")
+            return
+        ok = QMessageBox.question(
+            self, "Eliminar último procesamiento",
+            f"Se eliminarán {s['n_files']} archivos ({_tamano(s['bytes'])}) del docking, el resumen y las "
+            "interacciones (pasos 5–7).\n\nSe conservan las estructuras, los receptores y ligandos preparados, "
+            "las cajas y el redocking.\n\nPrimero elegirás dónde guardar una copia .zip; sin esa copia no se borra "
+            "nada. ¿Continuar?")
+        if ok != QMessageBox.StandardButton.Yes:
+            return
+        start = os.path.join(os.path.dirname(os.path.abspath(proy)), reset_run.default_backup_name(proy))
+        dest, _ = QFileDialog.getSaveFileName(self, "Guardar copia del procesamiento", start, "Archivo ZIP (*.zip)")
+        if not dest:
+            return  # sin copia no se borra
+        if not dest.lower().endswith(".zip"):
+            dest += ".zip"
+        try:
+            reset_run.make_backup(proy, dest)
+            n = reset_run.remove(proy)
+        except (IOError, RuntimeError) as ex:
+            QMessageBox.warning(self, "No se eliminó nada" if not os.path.exists(dest) else "Error", str(ex))
+            self.refresh()
+            return
+        self.refresh()
+        again = QMessageBox.question(
+            self, "Procesamiento eliminado",
+            f"Se eliminaron {n} archivos. Copia guardada en:\n{dest}\n\n¿Volver a correr el pipeline ahora?")
+        if again == QMessageBox.StandardButton.Yes:
+            self._run()
 
     def _update_eta(self, proy, done, total, running: bool) -> None:
         if total == 0:

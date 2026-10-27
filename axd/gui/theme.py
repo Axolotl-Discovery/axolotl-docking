@@ -35,7 +35,11 @@ def stylesheet(tokens: dict) -> str:
     QTabBar::tab {{ background: transparent; color: {t['text_secondary']}; padding: 12px 18px; border-bottom: 2px solid transparent; }}
     QTabBar::tab:selected {{ color: {t['accent']}; font-weight: 600; border-bottom: 2px solid {t['accent']}; }}
     QListWidget, QTreeWidget, QTableWidget {{ background: {t['panel']}; border: 1px solid {t['border']}; border-radius: 10px; gridline-color: {t['border']}; }}
-    QHeaderView::section {{ background: {t['panel_alt']}; color: {t['text_secondary']}; border: none; padding: 6px; text-transform: uppercase; font-size: 11px; }}
+    QHeaderView::section {{ background: {t['panel_alt']}; color: {t['text_secondary']}; border: none; padding: 6px 8px; font-size: 12px; font-weight: 600; }}
+    QListWidget::item {{ padding: 6px 8px; border-radius: 6px; }}
+    QListWidget::item:selected {{ background: {t['panel_alt']}; color: {t['accent']}; font-weight: 600; }}
+    QListWidget::item:disabled {{ color: {t['muted']}; }}
+    QTableWidget::item:selected {{ background: {t['panel_alt']}; color: {t['text']}; }}
     QPushButton {{ background: {t['panel_alt']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 8px 14px; }}
     QPushButton:hover {{ border-color: {t['accent']}; }}
     QPushButton:checked {{ background: {t['accent']}; color: #FFFFFF; border-color: {t['accent']}; font-weight: 600; }}
@@ -53,6 +57,20 @@ def stylesheet(tokens: dict) -> str:
     QFrame#BannerWarning {{ background: {t['warning_bg']}; border: 1px solid {t['warning']}; }}
     QFrame#BannerError {{ background: {t['error_bg']}; border: 1px solid {t['error']}; }}
     QFrame#BannerSuccess {{ background: {t['success_bg']}; border: 1px solid {t['success']}; }}
+    #SideNav {{ background: {t['panel']}; border-left: 1px solid {t['border']}; }}
+    QToolButton#NavButton {{ background: transparent; border: none; border-radius: 8px; padding: 9px 8px; color: {t['text_secondary']}; text-align: left; }}
+    QToolButton#NavButton:hover {{ background: {t['panel_alt']}; color: {t['text']}; }}
+    QToolButton#NavButton:checked {{ background: {t['panel_alt']}; color: {t['accent']}; font-weight: 600; }}
+    QToolButton#EyeButton {{ background: transparent; border: none; padding: 2px; }}
+    QToolButton#EyeButton:hover {{ background: {t['panel_alt']}; border-radius: 6px; }}
+    QFrame#DeviceCard {{ background: {t['panel']}; border: 1px solid {t['border']}; border-radius: 12px; }}
+    QFrame#DeviceCard[selected="true"] {{ border: 2px solid {t['accent']}; }}
+    QFrame#DeviceCard QLabel {{ background: transparent; }}
+    QToolButton#DeviceButton {{ background: {t['panel_alt']}; border: 1px solid {t['border']}; border-radius: 10px; padding: 8px; }}
+    QToolButton#DeviceButton:checked {{ border: 2px solid {t['accent']}; }}
+    QToolButton#DeviceButton:disabled {{ background: {t['bg']}; }}
+    QLabel#DeviceTitle {{ font-size: 15px; font-weight: 700; }}
+    QFrame#Separator {{ color: {t['border']}; }}
     QDockWidget {{ titlebar-close-icon: none; }}
     QDockWidget::title {{ background: {t['panel']}; padding: 6px; border-bottom: 1px solid {t['border']}; }}
     """

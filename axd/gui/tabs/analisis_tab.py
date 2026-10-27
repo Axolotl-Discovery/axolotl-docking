@@ -1,5 +1,5 @@
-"""Pestaña 'Análisis': dianas, ligandos/controles, caja de docking y
-parámetros. Lee/escribe axd.json directamente vía axd.config.load_project /
+"""Pestaña 'Proyecto' (antes 'Proyecto' + 'Análisis'): abrir/crear proyecto,
+dianas, ligandos/controles, caja de docking y parámetros. Lee/escribe axd.json directamente vía axd.config.load_project /
 save_project (el mismo dict que usan los asistentes de axd/wizards), para no
 duplicar ningún esquema."""
 from __future__ import annotations
@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import shutil
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSpinBox,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
@@ -15,6 +16,9 @@ from ... import config as C
 from ... import layout as L
 from ..dialogs.agregar_diana_dialog import AgregarDianaDialog
 from ..dialogs.agregar_ligando_dialog import AgregarLigandoDialog
+from .proyecto_tab import ProyectosPage
+
+SECCIONES = ("Proyecto", "Dianas", "Ligandos y controles", "Caja de docking", "Parámetros")
 
 
 class AnalisisTab(QWidget):
@@ -24,26 +28,42 @@ class AnalisisTab(QWidget):
         self.state.project_changed.connect(self._on_project_changed)
 
         outer = QHBoxLayout(self)
-        nav = QListWidget()
+        self.nav = nav = QListWidget()
         nav.setMaximumWidth(220)
-        for label in ("Dianas", "Ligandos y controles", "Caja de docking", "Parámetros"):
+        for label in SECCIONES:
             nav.addItem(QListWidgetItem(label))
         nav.currentRowChanged.connect(self._on_nav_changed)
         outer.addWidget(nav)
 
         self.stack = QStackedWidget()
+        self.proyectos_page = ProyectosPage(state)
+        self.stack.addWidget(self.proyectos_page)
         self._build_dianas_page()
         self._build_ligandos_page()
         self._build_caja_page()
         self._build_parametros_page()
         outer.addWidget(self.stack, 1)
+        self._update_nav_enabled()
         nav.setCurrentRow(0)
 
     def _on_nav_changed(self, row: int) -> None:
         self.stack.setCurrentIndex(row)
 
-    def _on_project_changed(self, _path: str) -> None:
+    def _on_project_changed(self, path: str) -> None:
+        self._update_nav_enabled()
+        if path and self.nav.currentRow() == 0:
+            self.nav.setCurrentRow(1)  # al abrir un proyecto, directo a configurarlo
+        elif not path:
+            self.nav.setCurrentRow(0)
         self.refresh()
+
+    def _update_nav_enabled(self) -> None:
+        """Sin proyecto abierto sólo tiene sentido la sección 'Proyecto'."""
+        hay = bool(self.state.project)
+        for i in range(1, self.nav.count()):
+            it = self.nav.item(i)
+            flags = it.flags()
+            it.setFlags(flags | Qt.ItemFlag.ItemIsEnabled if hay else flags & ~Qt.ItemFlag.ItemIsEnabled)
 
     def _project(self) -> dict | None:
         if not self.state.project:
@@ -113,7 +133,7 @@ class AnalisisTab(QWidget):
     def _add_target(self) -> None:
         p = self._project()
         if p is None:
-            QMessageBox.information(self, "Sin proyecto", "Abrí o creá un proyecto primero.")
+            QMessageBox.information(self, "Sin proyecto", "Abre o crea un proyecto primero.")
             return
         dlg = AgregarDianaDialog(self)
         if dlg.exec() and dlg.result_target:
@@ -175,7 +195,7 @@ class AnalisisTab(QWidget):
     def _add_ligand(self, bucket: str) -> None:
         p = self._project()
         if p is None:
-            QMessageBox.information(self, "Sin proyecto", "Abrí o creá un proyecto primero.")
+            QMessageBox.information(self, "Sin proyecto", "Abre o crea un proyecto primero.")
             return
         dlg = AgregarLigandoDialog(self)
         if dlg.exec() and dlg.result_ligand:

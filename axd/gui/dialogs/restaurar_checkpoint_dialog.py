@@ -12,7 +12,7 @@ class RestaurarCheckpointDialog(QDialog):
         self.resize(560, 420)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Elegí un checkpoint para restaurar la configuración del proyecto a ese "
+        layout.addWidget(QLabel("Elige un checkpoint para restaurar la configuración del proyecto a ese "
                                  "punto. No se puede deshacer."))
 
         self.list = QListWidget()
