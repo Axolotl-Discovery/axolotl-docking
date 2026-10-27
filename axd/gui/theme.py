@@ -38,6 +38,8 @@ def stylesheet(tokens: dict) -> str:
     QHeaderView::section {{ background: {t['panel_alt']}; color: {t['text_secondary']}; border: none; padding: 6px; text-transform: uppercase; font-size: 11px; }}
     QPushButton {{ background: {t['panel_alt']}; border: 1px solid {t['border']}; border-radius: 8px; padding: 8px 14px; }}
     QPushButton:hover {{ border-color: {t['accent']}; }}
+    QPushButton:checked {{ background: {t['accent']}; color: #FFFFFF; border-color: {t['accent']}; font-weight: 600; }}
+    QPushButton:disabled {{ color: {t['muted']}; }}
     QPushButton#Primary {{ background: {t['accent']}; color: #FFFFFF; border: none; font-weight: 700; }}
     QPushButton#Primary:hover {{ background: {t['accent_hover']}; }}
     QPushButton#Primary:pressed {{ background: {t['accent_pressed']}; }}
