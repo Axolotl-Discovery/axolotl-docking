@@ -107,7 +107,8 @@ def load_global():
     c = dict(DEFAULT_GLOBAL)
     if os.path.exists(CONF):
         try:
-            c.update(json.load(open(CONF)))
+            with open(CONF, encoding="utf-8") as fh:
+                c.update(json.load(fh))
         except (ValueError, OSError):
             pass
     return c
@@ -116,7 +117,8 @@ def load_global():
 def save_global(c):
     os.makedirs(CONF_DIR, exist_ok=True)
     tmp = CONF + ".tmp"
-    json.dump(c, open(tmp, "w"), indent=2, ensure_ascii=False)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(c, fh, indent=2, ensure_ascii=False)
     os.replace(tmp, CONF)
 
 
@@ -183,7 +185,7 @@ def new_project(path, name, mode="basic"):
     if not os.path.exists(gi):
         open(gi, "w").write(
             "# Generado por Axolotl Docking\n__pycache__/\n*.part\n04_Docking/logs/*.pid\n"
-            "04_Docking/logs/*.log\n.ipynb_checkpoints/\n*:Zone.Identifier\n")
+            "04_Docking/logs/*.log\n.ipynb_checkpoints/\n.checkpoints/\n*:Zone.Identifier\n")
     rd = os.path.join(path, "README.md")
     if not os.path.exists(rd):
         open(rd, "w").write(
@@ -200,7 +202,8 @@ def new_project(path, name, mode="basic"):
 
 def load_project(path):
     file = os.path.join(path, PROJECT_FILE)
-    p = json.load(open(file, encoding="utf-8"))
+    with open(file, encoding="utf-8") as fh:
+        p = json.load(fh)
     changed_schema, p = migrate_schema_to_english(p)
     p.setdefault("targets", []); p.setdefault("ligands", []); p.setdefault("controls", [])
     p.setdefault("name", p.get("codigo") or os.path.basename(os.path.abspath(path)))
@@ -221,7 +224,8 @@ def load_project(path):
 
 def save_project(path, p):
     f = os.path.join(path, PROJECT_FILE)
-    json.dump(p, open(f + ".tmp", "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+    with open(f + ".tmp", "w", encoding="utf-8") as fh:
+        json.dump(p, fh, indent=2, ensure_ascii=False)
     os.replace(f + ".tmp", f)
 
 

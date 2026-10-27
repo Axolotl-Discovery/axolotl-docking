@@ -58,7 +58,10 @@ class Project:
 
     def boxes(self):
         f = self.layout.boxes_json()
-        return json.load(open(f)) if os.path.exists(f) else {}
+        if not os.path.exists(f):
+            return {}
+        with open(f, encoding="utf-8") as fh:
+            return json.load(fh)
 
     def ligands_for(self, target_id):
         """[(entrada, es_control)] que se dockean contra una diana."""

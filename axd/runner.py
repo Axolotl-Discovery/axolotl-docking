@@ -38,8 +38,9 @@ def estado(proy):
     if not os.path.exists(f):
         return None
     try:
-        e = json.load(open(f))
-    except ValueError:
+        with open(f, encoding="utf-8") as fh:
+            e = json.load(fh)
+    except (ValueError, OSError):
         return None
     e["vivo"] = _vivo(e.get("pid"))
     return e

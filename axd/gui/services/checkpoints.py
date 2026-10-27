@@ -47,7 +47,8 @@ def _load_state(proy) -> dict:
     if not os.path.exists(f):
         return {"last_pct": -1, "checkpoints": []}
     try:
-        return json.load(open(f))
+        with open(f, encoding="utf-8") as fh:
+            return json.load(fh)
     except (ValueError, OSError):
         return {"last_pct": -1, "checkpoints": []}
 
@@ -55,7 +56,8 @@ def _load_state(proy) -> dict:
 def _save_state(proy, state: dict) -> None:
     os.makedirs(_dir(proy), exist_ok=True)
     tmp = _state_path(proy) + ".tmp"
-    json.dump(state, open(tmp, "w"), indent=2, ensure_ascii=False)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2, ensure_ascii=False)
     os.replace(tmp, _state_path(proy))
 
 
@@ -90,7 +92,8 @@ def _snapshot(proy, cp_id: str, pct: int, label: str, done: int, total: int) -> 
     created_at = time.strftime("%Y-%m-%d %H:%M:%S")
     manifest = {"id": cp_id, "pct": pct, "created_at": created_at, "label": label,
                 "done": done, "total": total, "results": manifest_results}
-    json.dump(manifest, open(os.path.join(dest, "manifest.json"), "w"), indent=2, ensure_ascii=False)
+    with open(os.path.join(dest, "manifest.json"), "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2, ensure_ascii=False)
     return Checkpoint(id=cp_id, pct=pct, created_at=created_at, label=label, done=done, total=total, path=dest)
 
 
@@ -135,7 +138,8 @@ def list_checkpoints(proy) -> list[Checkpoint]:
         if not os.path.isfile(manifest_path):
             continue
         try:
-            m = json.load(open(manifest_path))
+            with open(manifest_path, encoding="utf-8") as fh:
+                m = json.load(fh)
         except (ValueError, OSError):
             continue
         out.append(Checkpoint(id=m["id"], pct=m["pct"], created_at=m["created_at"], label=m.get("label", ""),
@@ -179,3 +183,8 @@ def restore_checkpoint(proy, checkpoint: Checkpoint, delete_newer_results: bool 
             fp = os.path.join(proy, rel)
             if os.path.exists(fp):
                 os.remove(fp)
+    # Reiniciar el umbral de checkpoints automáticos: si no, al rehacer el avance
+    # perdido nunca se volverían a crear (last_pct seguiría en el máximo anterior).
+    state = _load_state(proy)
+    state["last_pct"] = (checkpoint.pct // 10) * 10
+    _save_state(proy, state)
