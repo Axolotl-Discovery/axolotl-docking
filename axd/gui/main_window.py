@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QTabWidget, QToolBar, QWidget
+from PySide6.QtWidgets import QDockWidget, QHBoxLayout, QLabel, QMainWindow, QToolBar, QWidget
 
 from .. import config as C
 from .. import runner as R
@@ -13,10 +13,10 @@ from .dialogs.cerrar_terminal_dialog import CerrarTerminalDialog
 from .state import AppState
 from .tabs.analisis_tab import AnalisisTab
 from .tabs.entorno_tab import EntornoTab
+from .tabs.postproceso_tab import PostprocesoTab
 from .tabs.proceso_tab import ProcesoTab
-from .tabs.proyecto_tab import ProyectoTab
 from .tabs.resultados_tab import ResultadosTab
-from .tabs.visualizacion_tab import VisualizacionTab
+from .widgets.side_nav import SideTabs
 from .widgets.terminal_panel import TerminalPanel
 
 
@@ -32,19 +32,40 @@ class MainWindow(QMainWindow):
 
         self._build_top_bar()
 
-        self.tabs = QTabWidget()
-        self.tabs.addTab(ProyectoTab(self.state), "Proyecto")
-        self.tabs.addTab(AnalisisTab(self.state), "Análisis")
-        self.tabs.addTab(ProcesoTab(self.state), "Proceso")
-        self.tabs.addTab(VisualizacionTab(self.state), "Visualización")
-        self.tabs.addTab(ResultadosTab(self.state), "Resultados")
-        self.tabs.addTab(EntornoTab(self.state), "Entorno")
+        # Navegación: barra vertical de iconos a la derecha, desplegable.
+        g = C.load_global()
+        self.tabs = SideTabs(collapsed=bool(g.get("gui_nav_collapsed", True)))
+        self.tabs.addTab(AnalisisTab(self.state), "project", "Proyecto")
+        self.tabs.addTab(ProcesoTab(self.state), "process", "Proceso")
+        self.resultados_tab = ResultadosTab(self.state)
+        self.tabs.addTab(self.resultados_tab, "results", "Resultados")
+        self.postproceso_tab = PostprocesoTab(self.state)
+        self.postproceso_tab.open_viewer.connect(self._open_viewer)
+        self.tabs.addTab(self.postproceso_tab, "postproc", "Postprocesamiento")
+        self.tabs.addTab(EntornoTab(self.state), "env", "Entorno")
+        self.tabs.addAction("theme", "Cambiar tema", self.state.toggle_theme)
+        self.tabs.addAction("terminal", "Terminal", self._toggle_terminal)
+        self.tabs.collapsedChanged.connect(self._save_nav_collapsed)
         self.setCentralWidget(self.tabs)
 
         self._build_terminal_dock()
 
-        theme.apply_theme(self, self.state.theme)
-        self.state.theme_changed.connect(lambda t: theme.apply_theme(self, t))
+        self._apply_theme(self.state.theme)
+        self.state.theme_changed.connect(self._apply_theme)
+
+    def _open_viewer(self, target: str, ligand: str) -> None:
+        self.tabs.setCurrentIndex(self.tabs.indexOf(self.resultados_tab))
+        self.resultados_tab.show_viewer(target or None, ligand or None)
+
+    def _apply_theme(self, name: str) -> None:
+        theme.apply_theme(self, name)
+        t = theme.tokens_for(name)
+        self.tabs.set_colors(t["text_secondary"], t["accent"])
+
+    def _save_nav_collapsed(self, collapsed: bool) -> None:
+        g = C.load_global()
+        g["gui_nav_collapsed"] = collapsed
+        C.save_global(g)
 
     # ---------------------------------------------------------------- barra superior
     def _build_top_bar(self) -> None:
@@ -63,14 +84,6 @@ class MainWindow(QMainWindow):
         self.offline_chip.setObjectName("ChipOffline")
         self.offline_chip.hide()
         row.addWidget(self.offline_chip)
-
-        theme_btn = QPushButton("◐ Tema")
-        theme_btn.clicked.connect(self.state.toggle_theme)
-        row.addWidget(theme_btn)
-
-        term_btn = QPushButton("⌨ Terminal")
-        term_btn.clicked.connect(self._toggle_terminal)
-        row.addWidget(term_btn)
 
         toolbar = QToolBar(self)
         toolbar.setMovable(False)
@@ -95,8 +108,10 @@ class MainWindow(QMainWindow):
         self.terminal_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetFloatable |
                                        QDockWidget.DockWidgetFeature.DockWidgetMovable |
                                        QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self.terminal_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.terminal_dock)
+        # Abajo por defecto: a la derecha ya está la barra de navegación.
+        self.terminal_dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea |
+                                           Qt.DockWidgetArea.RightDockWidgetArea)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.terminal_dock)
         self.terminal_dock.hide()
         self.terminal_dock.visibilityChanged.connect(self._on_terminal_visibility_changed)
         # Interceptamos el cierre nosotros: closeEvent de QDockWidget no es fácil

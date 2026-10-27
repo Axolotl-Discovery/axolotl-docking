@@ -81,10 +81,21 @@ Docking gui                abrir la interfaz gráfica de escritorio (PySide6)
 
 ### Interfaz gráfica (GUI)
 
-Además del menú de terminal, hay una interfaz de escritorio (`Docking gui`, PySide6) con 6 pestañas —
-Proyecto, Análisis, Proceso, Visualización, Resultados y Entorno — que no duplica nada del pipeline:
-es una capa sobre el mismo `axd/` (mismo `axd.json`, mismo `axd.runner`, mismo `axd.entorno`). Agrega
-algunas cosas que el CLI no tenía:
+Además del menú de terminal, hay una interfaz de escritorio (`Docking gui`, PySide6) con 5 pestañas en
+una barra de iconos a la derecha (desplegable para ver los nombres) — **Proyecto** (abrir/crear,
+dianas, ligandos, caja y parámetros), **Proceso**, **Resultados** (tabla de afinidades; el ojo de cada
+fila abre el visor 3D de ese complejo), **Postprocesamiento** (lo mismo que la opción "Ver resultados"
+de la terminal: afinidades, matriz ligando × diana, redocking, interacciones y acciones) y **Entorno** —
+que no duplica nada del pipeline: es una capa sobre el mismo `axd/` (mismo `axd.json`, mismo
+`axd.runner`, mismo `axd.entorno`). Agrega algunas cosas que el CLI no tenía:
+
+- **Visor 3D**: 3Dmol.js embebido (copia local, sin internet) con cartoon/superficie/sticks, ligando,
+  residuos en contacto y caja de docking. Necesita QtWebEngine (viene con PySide6 de PyPI).
+- **Eliminar último procesamiento** (Proceso): borra docking, resumen e interacciones (pasos 5–7) para
+  rehacerlos, conservando receptores/ligandos preparados y redocking; antes guarda obligatoriamente una
+  copia `.zip` (descomprimirla en el proyecto deja todo como estaba).
+- **Dispositivo de ejecución** (Entorno): CPU (smina) o GPU (Vina-GPU 2.1), con el procesador y la
+  tarjeta detectados — ver [Docking en GPU](#docking-en-gpu-vina-gpu-21).
 
 - **Checkpoints automáticos**: cada 10% de avance real se guarda una foto de `axd.json` + qué resultados
   existen, en `.checkpoints/` dentro del proyecto (viaja con la carpeta). Se puede restaurar desde la
@@ -106,6 +117,32 @@ Instalación (dentro del entorno conda, ya incluido en `env/environment.yml`):
 pip install --break-system-packages pyside6   # si no viene ya del entorno conda
 Docking gui
 ```
+
+### Docking en GPU (Vina-GPU 2.1)
+
+Opcional. Usa [Vina-GPU 2.1](https://github.com/DeltaGroupNJUPT/Vina-GPU-2.1) (AutoDock-Vina-GPU-2.1,
+Apache-2.0, OpenCL). Requisitos: **Linux o WSL** con GPU **NVIDIA o AMD** y su driver con OpenCL
+(`clinfo -l` debe listar la plataforma). **No existe para macOS**: en Mac el docking sigue en CPU.
+
+```bash
+bash scripts/instalar_vina_gpu.sh            # detecta NVIDIA/AMD, compila y genera los kernels de TU GPU
+bash scripts/instalar_vina_gpu.sh --plataforma amd --con-cajas-grandes   # opciones
+```
+
+Luego, en la GUI: Entorno → Dispositivo de ejecución → GPU. Notas:
+
+- Compila en un commit fijo y genera los kernels OpenCL en tu equipo (2–5 min, puede pedir `sudo`
+  para instalar Boost/OpenCL con apt).
+- Por defecto admite **cajas de hasta 30 Å por lado** (docking dirigido). `--con-cajas-grandes` agrega
+  hasta 70 Å, pero esa variante reserva ~15 GB de memoria; si no alcanza, se descarta sola. Una caja
+  mayor (p. ej. docking ciego) necesita CPU.
+- Vina-GPU no tiene `exhaustiveness`: la búsqueda la controlan `gpu_threads` (≥ 1000, por defecto 8000)
+  y `gpu_search_depth` (opcional) en los parámetros de docking. Corre una corrida a la vez.
+- **Un proyecto no mezcla motores**: el motor usado queda en `axd.json` (`docking.motor_usado`). Para
+  cambiar de CPU a GPU (o al revés) con resultados ya hechos, usa *Eliminar último procesamiento*.
+- Ligandos con átomos no comunes siguen yendo a AutoDock4 en CPU.
+- En WSL, el driver de NVIDIA para Windows no siempre expone OpenCL; si `clinfo -l` no ve NVIDIA,
+  Vina-GPU no puede usar la tarjeta.
 
 ---
 
@@ -214,7 +251,7 @@ generar gasto, ambos son sólo manuales (`workflow_dispatch`), y las pruebas se 
 entornos propios (`pytest` y `QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py`).
 
 - [`gui-smoke.yml`](.github/workflows/gui-smoke.yml): arranca la GUI (PySide6, sin entorno
-  gráfico real) en Linux y Windows — prueba que la ventana y las 6 pestañas funcionan.
+  gráfico real) en Linux y Windows — prueba que la ventana y las 5 pestañas funcionan.
 - [`backend-real-install.yml`](.github/workflows/backend-real-install.yml): corre
   `scripts/instalar_entorno.sh` de verdad (conda + smina + ADFRsuite reales, descargados de
   Internet) en Linux, y hace un **docking real** con smina sobre un sistema clásico de

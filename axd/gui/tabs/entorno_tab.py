@@ -1,4 +1,4 @@
-"""Pestaña 'Entorno': estado real de conda (axd.config/axd.entorno), ruta
+"""Pestaña 'Entorno': dispositivo de ejecución (CPU/GPU), estado real de conda (axd.config/axd.entorno), ruta
 manual, selector de entorno conda, perfil de cómputo, calibración de
 dispositivo y actualizaciones."""
 from __future__ import annotations
@@ -8,13 +8,14 @@ import threading
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
+                               QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
 from PySide6.QtCore import Qt
 
 from ... import config as C
 from ... import entorno as ENT
 from ..dialogs.calibracion_dialog import CalibracionDialog
 from ..services import calibration, compute_profile, updater
+from ..widgets.device_panel import DevicePanel
 
 
 class _UpdateWorkerSignals(QObject):
@@ -26,10 +27,26 @@ class EntornoTab(QWidget):
         super().__init__(parent)
         self.state = state
 
-        outer = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget()
+        scroll.setWidget(body)
+        root.addWidget(scroll)
+        outer = QVBoxLayout(body)
         title = QLabel("Entorno")
         title.setObjectName("Title")
         outer.addWidget(title)
+
+        # ---- dispositivo de ejecución (CPU / GPU)
+        self.device_panel = DevicePanel(state)
+        outer.addWidget(self.device_panel)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setObjectName("Separator")
+        outer.addWidget(sep)
 
         # ---- conda
         self.conda_status = QLabel("")
@@ -151,7 +168,7 @@ class EntornoTab(QWidget):
             self.conda_status.setText(f"● conda encontrado en {conda}, pero el entorno '{g['entorno']}' no existe"
                                        f" (hay: {', '.join(envs) or 'ninguno'})")
         else:
-            self.conda_status.setText("● conda/miniforge no encontrado — indicá la ruta a mano abajo.")
+            self.conda_status.setText("● conda/miniforge no encontrado — indica la ruta a mano abajo.")
         self.env_combo.clear()
         for e in [x for x in envs if x not in ("base", "miniforge3")]:
             self.env_combo.addItem(e + ("  (activo)" if e == g["entorno"] else ""), e)

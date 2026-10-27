@@ -1,10 +1,11 @@
-"""Pestaña 'Proyecto': recientes (axd.config.register_recent / load_global,
+"""Página 'Proyecto' (primera sección de la pestaña Proyecto): recientes (axd.config.register_recent / load_global,
 sin tocar — ya confirmado por el usuario), abrir carpeta, crear proyecto
 nuevo. Es una capa fina sobre axd.config.new_project / find_project."""
 from __future__ import annotations
 
 import os
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
                                QVBoxLayout, QWidget)
@@ -48,7 +49,7 @@ class _NuevoProyectoDialog(QDialog):
         return self.folder.text().strip(), self.name.text().strip(), self.mode.currentData()
 
 
-class ProyectoTab(QWidget):
+class ProyectosPage(QWidget):
     def __init__(self, state, parent=None):
         super().__init__(parent)
         self.state = state
@@ -69,7 +70,7 @@ class ProyectoTab(QWidget):
         row.addStretch(1)
         layout.addLayout(row)
 
-        self.empty_label = QLabel("Todavía no hay proyectos recientes. Abrí una carpeta existente o creá uno "
+        self.empty_label = QLabel("Todavía no hay proyectos recientes. Abre una carpeta existente o crea uno "
                                    "nuevo.")
         self.empty_label.setObjectName("Muted")
         layout.addWidget(self.empty_label)
@@ -77,6 +78,10 @@ class ProyectoTab(QWidget):
         self.list = QListWidget()
         self.list.itemDoubleClicked.connect(self._open_item)
         layout.addWidget(self.list, 1)
+        hint = QLabel("Doble clic en un proyecto reciente para abrirlo.")
+        hint.setObjectName("Muted")
+        layout.addWidget(hint)
+        self.state.project_changed.connect(lambda _p: self.refresh())
 
         self.refresh()
 
@@ -87,11 +92,11 @@ class ProyectoTab(QWidget):
         self.list.setVisible(bool(recents))
         for path in recents:
             item = QListWidgetItem(f"{os.path.basename(path)}   ·   {path}")
-            item.setData(1, path)
+            item.setData(Qt.ItemDataRole.UserRole, path)
             self.list.addItem(item)
 
     def _open_item(self, item: QListWidgetItem) -> None:
-        self.state.open_project(item.data(1))
+        self.state.open_project(item.data(Qt.ItemDataRole.UserRole))
 
     def _open_folder(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Carpeta del proyecto")
@@ -99,7 +104,7 @@ class ProyectoTab(QWidget):
             return
         if not os.path.exists(os.path.join(d, C.PROJECT_FILE)):
             QMessageBox.warning(self, "No es un proyecto", f"Esa carpeta no tiene {C.PROJECT_FILE}. "
-                                 "Creá el proyecto con '+ Proyecto nuevo'.")
+                                 "Crea el proyecto con '+ Proyecto nuevo'.")
             return
         self.state.open_project(d)
 
@@ -109,7 +114,7 @@ class ProyectoTab(QWidget):
             return
         folder, name, mode = dlg.values()
         if not folder or not name:
-            QMessageBox.warning(self, "Faltan datos", "Indicá carpeta y nombre.")
+            QMessageBox.warning(self, "Faltan datos", "Indica carpeta y nombre.")
             return
         os.makedirs(folder, exist_ok=True)
         C.new_project(folder, name, mode=mode)

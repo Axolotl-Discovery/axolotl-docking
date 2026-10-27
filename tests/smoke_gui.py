@@ -63,14 +63,25 @@ def main() -> int:
         win.state.open_project(proy)
         app.processEvents()
 
-        assert win.tabs.count() == 6, f"se esperaban 6 pestañas, hay {win.tabs.count()}"
+        nombres = [win.tabs.tabText(i) for i in range(win.tabs.count())]
+        assert nombres == ["Proyecto", "Proceso", "Resultados", "Postprocesamiento", "Entorno"], nombres
         for i in range(win.tabs.count()):
+            win.tabs.setCurrentIndex(i)
             w = win.tabs.widget(i)
             if hasattr(w, "refresh"):
                 w.refresh()
-        app.processEvents()
+            app.processEvents()
 
-        assert win.tabs.widget(1).targets_table.rowCount() == 1, "la pestaña Análisis no cargó la diana"
+        assert win.tabs.widget(0).targets_table.rowCount() == 1, "la pestaña Proyecto no cargó la diana"
+        # el ojo de Resultados y "Ver en 3D" de Postprocesamiento llevan al visor
+        win._open_viewer("t1", "l1")
+        app.processEvents()
+        assert win.tabs.currentIndex() == 2 and win.resultados_tab.stack.currentIndex() == 1
+        win.resultados_tab.show_table()
+        win.tabs.set_collapsed(False)
+        win.tabs.set_collapsed(True)
+        win.state.toggle_theme()
+        app.processEvents()
         win.close()
         app.processEvents()
         print("OK: GUI smoke test passed")

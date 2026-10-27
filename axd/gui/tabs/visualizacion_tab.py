@@ -106,7 +106,10 @@ def _fmt_interaction(row):
 
 
 class VisualizacionTab(QWidget):
-    def __init__(self, state, parent=None):
+    """Lista + visor 3D + detalle. Vive dentro de Resultados (se abre con el ojo
+    de la tabla); `on_back` pone un botón para volver a la tabla."""
+
+    def __init__(self, state, parent=None, on_back=None):
         super().__init__(parent)
         self.state = state
         self.state.project_changed.connect(lambda _p: self.refresh())
@@ -114,9 +117,16 @@ class VisualizacionTab(QWidget):
         self._shown_path = None
 
         layout = QVBoxLayout(self)
+        head = QHBoxLayout()
+        if on_back is not None:
+            back = QPushButton("← Volver a la tabla")
+            back.clicked.connect(on_back)
+            head.addWidget(back)
         title = QLabel("Visualización")
         title.setObjectName("Title")
-        layout.addWidget(title)
+        head.addWidget(title)
+        head.addStretch(1)
+        layout.addLayout(head)
         self.hint = QLabel()
         self.hint.setObjectName("Muted")
         self.hint.setWordWrap(True)
@@ -217,6 +227,23 @@ class VisualizacionTab(QWidget):
         if sel is not None:
             self.list.setCurrentRow(sel)
         self._show_detail()
+
+    def select(self, target: str, ligand: str | None = None) -> bool:
+        """Selecciona el complejo diana+ligando (o la diana preparada si no hay
+        ligando o no existe su complejo). True si encontró algo que mostrar."""
+        self.refresh()
+        want = [("complex", target, ligand)] if ligand else []
+        want.append(("target", target, None))
+        for kind, t, l in want:
+            for i in range(self.list.count()):
+                d = self.list.item(i).data(ROLE) or {}
+                if d.get("kind") != kind:
+                    continue
+                if kind == "complex" and d.get("target") == t and d.get("ligand") == l or \
+                        kind == "target" and d.get("id") == t:
+                    self.list.setCurrentRow(i)
+                    return True
+        return False
 
     def _selected(self):
         item = self.list.currentItem()
