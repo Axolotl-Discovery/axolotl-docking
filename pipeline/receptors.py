@@ -40,6 +40,10 @@ def _lineas(pdb):
 def _xyz(lineas, sin_h=True):
     xs = []
     for l in lineas:
+        # Sólo registros con coordenadas: el receptor limpio trae líneas TER (las
+        # escribe PDBFixer) y con ellas la caja ciega fallaba con float('').
+        if l[:6] not in ("ATOM  ", "HETATM"):
+            continue
         el = l[76:78].strip() or l[12:16].strip()[:1]
         if sin_h and el.upper() == "H":
             continue
@@ -65,6 +69,19 @@ def _necesita_auto(d):
     a docking ciego."""
     return ("auto" in (d.get("chains"), d.get("cofactors"))
             or d.get("box", {}).get("mode") in (None, "auto"))
+
+
+def _completar_ref(box_cfg, crudo):
+    """Caja en modo 'ligand' sin 'ref' (la GUI no pide cuál): elige el ligando
+    co-cristalizado con el mismo criterio que el modo automático. False si no hay."""
+    from axd.infra.pdb import auto_decision, inspect_pdb
+    cads, het = inspect_pdb(crudo)
+    ref, _cad = auto_decision(het, cads)
+    if not ref:
+        return False
+    box_cfg["ref"] = ref
+    log(f"    ligando de referencia detectado: {ref}")
+    return True
 
 
 def _resolver_auto(d, crudo):
@@ -119,6 +136,11 @@ def run(P, rehacer=False):
             cadenas = set(d.get("chains") or "")
             cofs = [_spec(x) for x in d.get("cofactors", [])]
             box_cfg = d.get("box", {"mode": "blind", "margin": 10})
+            if box_cfg.get("mode") == "ligand" and not box_cfg.get("ref"):
+                if not _completar_ref(box_cfg, crudo):
+                    log("    ✘ modo 'ligando de referencia' pero la estructura no trae un ligando "
+                        "co-cristalizado utilizable; usa 'Automático' o 'Ciego'"); fallos += 1; continue
+                cambios = True
             ref_spec = _spec(box_cfg["ref"]) if box_cfg.get("mode") == "ligand" else None
 
             pol, cof, ref = [], [], []

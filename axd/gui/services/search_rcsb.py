@@ -34,7 +34,10 @@ def _post_json(url, payload, timeout=20):
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={**UA, "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+        body = r.read().decode().strip()
+    # RCSB responde 204 sin cuerpo cuando no hay resultados; urllib no lo trata
+    # como error, así que un cuerpo vacío se interpreta como "cero resultados".
+    return json.loads(body) if body else {}
 
 
 def _get_json(url, timeout=15):
@@ -77,6 +80,8 @@ def search_targets(query: str, *, human_only: bool = False, rows: int = 10) -> l
         raise SearchError(f"RCSB respondió {e.code}") from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise SearchError(str(e)) from e
+    except ValueError as e:  # JSON inválido: respuesta inesperada de la API
+        raise SearchError(f"respuesta inválida de RCSB: {e}") from e
 
     hits = result.get("result_set", [])[:rows]
     out = []

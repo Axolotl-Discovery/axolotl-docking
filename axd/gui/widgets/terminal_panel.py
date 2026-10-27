@@ -29,7 +29,7 @@ class TerminalPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.output = QPlainTextEdit(readOnly=True)
-        self.output.setStyleSheet("background:#000000; color:#F2F2F2; font-family: ui-monospace, Menlo, monospace;"
+        self.output.setStyleSheet("background:#000000; color:#F2F2F2; font-family: Menlo, Consolas, 'DejaVu Sans Mono', monospace;"
                                    " border: none; border-radius: 0;")
         layout.addWidget(self.output, 1)
 
@@ -37,7 +37,7 @@ class TerminalPanel(QWidget):
         self.input = QLineEdit()
         self.input.setPlaceholderText("Escribí una respuesta y Enter…")
         self.input.returnPressed.connect(self._send_line)
-        self.input.setStyleSheet("background:#000000; color:#F2F2F2; font-family: ui-monospace, Menlo, monospace;"
+        self.input.setStyleSheet("background:#000000; color:#F2F2F2; font-family: Menlo, Consolas, 'DejaVu Sans Mono', monospace;"
                                   " border: 1px solid #3A3A3A;")
         send = QPushButton("Enviar")
         send.clicked.connect(self._send_line)
