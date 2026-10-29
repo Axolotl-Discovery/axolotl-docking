@@ -91,9 +91,14 @@ que no duplica nada del pipeline: es una capa sobre el mismo `axd/` (mismo `axd.
 
 - **Visor 3D**: 3Dmol.js embebido (copia local, sin internet) con cartoon/superficie/sticks, ligando,
   residuos en contacto y caja de docking. Necesita QtWebEngine (viene con PySide6 de PyPI).
+- **Lista de pasos** (Proceso): cada paso de la corrida como una lista de tareas — casilla vacía
+  (pendiente), ✔ verde (completado) o ✘ rojo (falló/interrumpido) con un ⓘ que muestra el reporte del
+  error capturado en ese paso. El pipeline lo anota en `04_Docking/logs/steps.json`.
 - **Eliminar último procesamiento** (Proceso): borra docking, resumen e interacciones (pasos 5–7) para
-  rehacerlos, conservando receptores/ligandos preparados y redocking; antes guarda obligatoriamente una
-  copia `.zip` (descomprimirla en el proyecto deja todo como estaba).
+  rehacerlos, conservando receptores/ligandos preparados y redocking. Se puede guardar antes una copia
+  `.zip` (descomprimirla en el proyecto deja todo como estaba) o eliminar sin copia (pide confirmación).
+- **Reporte PDF** (Postprocesamiento → Acciones, y paso `report` al final de cada corrida); el laboratorio,
+  el responsable y el logo se configuran en Entorno → Reporte.
 - **Dispositivo de ejecución** (Entorno): CPU (smina) o GPU (Vina-GPU 2.1), con el procesador y la
   tarjeta detectados — ver [Docking en GPU](#docking-en-gpu-vina-gpu-21).
 
@@ -198,10 +203,41 @@ o dar la ruta a un `.sdf`/`.mol2` 3D (por ejemplo, tetravanadato desde una estru
 | `ligands` | quita sales, 3D con RDKit (ETKDGv3 + MMFF) si hace falta, Meeko con macrociclos rígidos |
 | `redocking` | redockea el ligando cristalográfico y calcula RMSD simétrico (criterio ≤ 2 Å) |
 | `docking` | smina: ligandos × dianas × semillas, en `/tmp` (rutas con espacios OK), escritura atómica, **reanudable** |
+| `consensus` | **modo avanzado (opt-in)**: corre motores extra sobre los mismos pares y los compara con ECR + acuerdo de poses (ver «Modo consenso»); sólo aparece si lo activas en Proyecto → Parámetros |
 | `summary` | media ± DE, mejor, eficiencia de ligando, Δ vs control → CSV + Excel, mejores poses |
 | `interactions` | **complejo proteína + ligando en un solo PDB** (con hidrógenos y enlaces) + pose en SDF, y análisis de interacciones con PLIP: puentes de H, hidrofóbicas, apilamiento π, catión-π, puentes salinos, halógeno, agua y metal (respaldo geométrico si PLIP falla) |
+| `report` | **reporte PDF** en `07_Report/` (portada con logo del laboratorio, resumen, pasos de la corrida, métodos generados a partir de lo que se hizo, dianas y cajas, ligandos en 2D, redocking, afinidades con gráficas, matriz, interacciones, problemas, entorno y referencias); figuras también en `06_Figures/`. Requiere `reportlab` (ya en `env/environment.yml`) |
 
 (Estos son los identificadores internos que usan `axd.runner` y la GUI — en el menú interactivo cada paso se muestra con su descripción en español, como en la tabla de arriba.)
+
+### Modo consenso (avanzado)
+
+Un ligando es un candidato más fiable si motores con funciones de puntuación **distintas** coinciden. El modo consenso
+(Proyecto → Parámetros → «Modo avanzado», desactivado por defecto) corre, con los mismos receptores, cajas, ligandos y
+semillas:
+
+| Motor | Qué es |
+|---|---|
+| **Vina** | el motor principal del proyecto (smina, o Vina-GPU); no se repite, se lee de `Results/` |
+| **Vinardo** | smina con `--scoring vinardo` (otra función de puntuación; Quiroga y Villarreal, 2016) |
+| **AutoDock4** | requiere ADFRsuite; el más lento |
+
+Activarlo avisa del tiempo y los recursos extra (cada motor adicional repite todas las corridas, más su redocking).
+No se incluye GOLD (licencia comercial) y Gnina queda como motor opcional futuro.
+
+- **ECR** (Exponential Consensus Ranking; Palacio-Rodríguez et al., *Sci Rep* 2019) combina los rangos de cada motor.
+  σ = 10 % del número de ligandos, con mínimo 1 (adaptación a proyectos chicos).
+- **Acuerdo de poses:** RMSD (con simetría) entre las mejores poses de cada par de motores; coinciden si ≤ 2 Å.
+- **Veredicto por ligando:** *Robusto* (rangos y poses coinciden), *Parcial* (sólo uno) o *Discrepante* (ninguno).
+  Un ligando que algún motor no resolvió queda *Incompleto* y no entra al ranking.
+- Si hay ligandos con átomos no comunes (sólo AutoDock4 los entiende), el consenso no aplica a esos pares.
+- **Resultados:** `05_Analysis/consensus_summary.csv` (ΔG y rango por motor, ECR, dispersión, RMSD, veredicto),
+  `consensus_poses.csv`, `consensus_kendall.csv` (τ entre motores), `consensus_redocking.csv`, `consensus_by_engine.csv`
+  (corridas y tiempo), hojas «Consenso» en el Excel, la sección **Postprocesamiento → Consenso entre motores** y una
+  sección **«Consenso entre motores»** en el reporte PDF que muestra cómo cambia cada ligando de un motor a otro
+  (rangos, τ de Kendall, acuerdo de poses y redocking por motor). Las poses de los motores extra quedan en
+  `04_Docking/Consensus/<motor>/`.
+- «Eliminar último procesamiento» también borra el consenso.
 
 ### Ver resultados en la terminal
 
@@ -219,7 +255,7 @@ mi_proyecto/
 ├─ .checkpoints/            snapshots automáticos cada 10% de avance (GUI; viaja con la carpeta)
 ├─ 01_Receptors/            crudos + clean/
 ├─ 02_Ligands/  03_Controls/ (crystal_ligand/)
-├─ 04_Docking/  Receptors/ Ligands/ Controls/ Redocking/ Results/<diana>/ BestPoses/ Complexes/ boxes.json logs/
+├─ 04_Docking/  Receptors/ Ligands/ Controls/ Redocking/ Results/<diana>/ Consensus/<motor>/ (modo consenso) BestPoses/ Complexes/ boxes.json logs/
 ├─ 05_Analysis/             affinities_summary.csv, affinity_matrix.csv, redocking_summary.csv, interactions_*.csv, *.xlsx
 ├─ 06_Figures/  07_Report/
 └─ README.md  .gitignore

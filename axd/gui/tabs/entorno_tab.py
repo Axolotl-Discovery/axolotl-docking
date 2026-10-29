@@ -85,6 +85,40 @@ class EntornoTab(QWidget):
         self.doctor_output.setObjectName("Muted")
         outer.addWidget(self.doctor_output)
 
+        # ---- reporte PDF (logos y datos del laboratorio)
+        rep_title = QLabel("Reporte")
+        rep_title.setObjectName("Title")
+        outer.addWidget(rep_title)
+        rep_note = QLabel("Aparecen en la portada y el pie de cada reporte PDF. El logo puede ser PNG o JPG.")
+        rep_note.setObjectName("Muted")
+        outer.addWidget(rep_note)
+        rep_form = QFormLayout()
+        self.rep_lab = QLineEdit()
+        self.rep_lab.setPlaceholderText("Nombre del laboratorio o grupo")
+        rep_form.addRow("Laboratorio", self.rep_lab)
+        self.rep_autor = QLineEdit()
+        self.rep_autor.setPlaceholderText("Persona responsable")
+        rep_form.addRow("Responsable", self.rep_autor)
+        logo_row = QHBoxLayout()
+        self.rep_logo = QLineEdit()
+        self.rep_logo.setPlaceholderText("Archivo de logo (opcional)")
+        self.rep_logo.textChanged.connect(self._preview_logo)
+        logo_btn = QPushButton("Elegir logo…")
+        logo_btn.clicked.connect(self._browse_logo)
+        logo_row.addWidget(self.rep_logo, 1)
+        logo_row.addWidget(logo_btn)
+        rep_form.addRow("Logo", logo_row)
+        self.rep_preview = QLabel("")
+        self.rep_preview.setFixedHeight(64)
+        rep_form.addRow("", self.rep_preview)
+        outer.addLayout(rep_form)
+        rep_save = QPushButton("Guardar datos del reporte")
+        rep_save.clicked.connect(self._save_report_settings)
+        rep_row = QHBoxLayout()
+        rep_row.addWidget(rep_save)
+        rep_row.addStretch(1)
+        outer.addLayout(rep_row)
+
         # ---- perfil de cómputo
         perfil_title = QLabel("Perfil de cómputo")
         perfil_title.setObjectName("Title")
@@ -159,6 +193,9 @@ class EntornoTab(QWidget):
     # ---------------------------------------------------------------- conda
     def refresh(self) -> None:
         g = C.load_global()
+        self.rep_lab.setText(g.get("reporte_laboratorio", ""))
+        self.rep_autor.setText(g.get("reporte_autor", ""))
+        self.rep_logo.setText(g.get("reporte_logo", ""))
         conda = C.conda_path(g)
         self.conda_path_edit.setText(conda or g.get("conda", ""))
         envs = C.conda_environments(conda) if conda else []
@@ -185,6 +222,33 @@ class EntornoTab(QWidget):
                                     f"· {cal.measured_at}")
         else:
             self.cal_label.setText("Sin calibrar todavía.")
+
+    def _browse_logo(self) -> None:
+        f, _ = QFileDialog.getOpenFileName(self, "Logo para el reporte", os.path.expanduser("~"),
+                                           "Imágenes (*.png *.jpg *.jpeg)")
+        if f:
+            self.rep_logo.setText(f)
+
+    def _preview_logo(self, path: str) -> None:
+        from PySide6.QtGui import QPixmap
+        p = os.path.expanduser(path.strip())
+        px = QPixmap(p) if p and os.path.isfile(p) else QPixmap()
+        if px.isNull():
+            self.rep_preview.setText("(sin logo)" if not path.strip() else "No se pudo leer esa imagen.")
+            self.rep_preview.setPixmap(QPixmap())
+        else:
+            self.rep_preview.setPixmap(px.scaledToHeight(60, Qt.TransformationMode.SmoothTransformation))
+
+    def _save_report_settings(self) -> None:
+        logo = self.rep_logo.text().strip()
+        if logo and not os.path.isfile(os.path.expanduser(logo)):
+            QMessageBox.warning(self, "Logo no encontrado", "Ese archivo de logo no existe.")
+            return
+        g = C.load_global()
+        g.update(reporte_laboratorio=self.rep_lab.text().strip(), reporte_autor=self.rep_autor.text().strip(),
+                 reporte_logo=logo)
+        C.save_global(g)
+        QMessageBox.information(self, "Guardado", "Los próximos reportes usarán estos datos.")
 
     def _browse_conda(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Carpeta de conda/miniforge")

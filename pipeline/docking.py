@@ -26,8 +26,9 @@ def _smina():
     return tool("smina", ["~/tools/bin/smina"])
 
 
-def correr_smina(smina, rec, lig, caja, salida, semilla, d, rehacer=False):
+def correr_smina(smina, rec, lig, caja, salida, semilla, d, rehacer=False, scoring=None):
     """Ejecuta smina en /tmp (sin espacios) y escribe la salida de forma atómica.
+    `scoring` elige otra función de puntuación de smina (p. ej. "vinardo"; None = Vina).
     Devuelve (afinidad, ya_existia)."""
     if is_complete(salida) and not rehacer:
         return affinity(salida), True
@@ -42,6 +43,8 @@ def correr_smina(smina, rec, lig, caja, salida, semilla, d, rehacer=False):
                "--size_x", str(s[0]), "--size_y", str(s[1]), "--size_z", str(s[2]),
                "--exhaustiveness", str(d["exhaustiveness"]), "--num_modes", str(d["num_modes"]),
                "--energy_range", str(d["energy_range"]), "--seed", str(semilla), "-o", "o.pdbqt"]
+        if scoring:
+            cmd += ["--scoring", scoring]
         if int(d.get("cpu") or 0) > 0:
             cmd += ["--cpu", str(d["cpu"])]
         rc, out = run_cmd(cmd, cwd=tmp)
@@ -74,14 +77,20 @@ class Motor:
     smina/Vina no conocen (V, Pt, Ru…) o si el proyecto lo pide. Se usa el MISMO motor para todo
     el proyecto (ligandos, controles y redocking) para que las energías sean comparables."""
 
-    def __init__(self, P, ligandos_pdbqt):
+    def __init__(self, P, ligandos_pdbqt, forzar=None):
+        """`forzar` ("smina" | "vinardo" | "ad4") es para el modo consenso: ese motor se usa tal cual,
+        sin mirar el dispositivo ni el motor registrado del proyecto (no se «mezclan» porque sus
+        resultados van aparte, en 04_Docking/Consensus)."""
         import metals
         from axd.config import load_global
         self.P, self.m = P, metals
+        self.forzado = forzar is not None
+        self.scoring = "vinardo" if forzar == "vinardo" else None
         g = load_global()
-        pedido = P.cfg["docking"].get("motor", "smina")
-        dispositivo = P.cfg["docking"].get(DEV.DEVICE_KEY) or DEV.get_device(g)
-        raros = [p for p in ligandos_pdbqt if os.path.exists(p) and metals.necesita_ad4(p)]
+        # el esquema en inglés guarda "engine"; "motor" queda por proyectos muy viejos
+        pedido = forzar or P.cfg["docking"].get("engine") or P.cfg["docking"].get("motor") or "smina"
+        dispositivo = DEV.CPU if forzar else (P.cfg["docking"].get(DEV.DEVICE_KEY) or DEV.get_device(g))
+        raros = [] if forzar else [p for p in ligandos_pdbqt if os.path.exists(p) and metals.necesita_ad4(p)]
         if pedido == "ad4" or raros:
             self.nombre = "ad4"
             if dispositivo == DEV.GPU:
@@ -104,11 +113,18 @@ class Motor:
                 log("  ⚛ Hay ligandos con átomos no comunes → TODO el proyecto se dockea con AutoDock4 "
                     "(para que las energías sean comparables)")
             log(f"  · Parámetros: {P.rel(self.param)} (detalle en 05_Analysis/metal_parameters.txt)")
-            log("  ⚠ Parámetros genéricos (UFF) para metales: usa las energías de forma comparativa y valida con DM.")
+            if tipos - metals.EN_AD4:
+                log("  ⚠ Parámetros genéricos (UFF) para metales: usa las energías de forma comparativa y valida con DM.")
 
     def disponible(self):
         if self.nombre == "smina" and not self.smina:
             log("  ✘ smina no está instalado. Corre:  Docking entorno"); return False
+        if self.nombre == "ad4" and not (tool("autodock4", ["~/tools/ADFRsuite-1.0/bin/autodock4"])
+                                         and tool("autogrid4", ["~/tools/ADFRsuite-1.0/bin/autogrid4"])):
+            log("  ✘ AutoDock4/AutoGrid4 no están instalados (vienen con ADFRsuite). Corre:  Docking entorno")
+            return False
+        if self.forzado:
+            return True
         if self.nombre == "vina-gpu" and not self.vgpu:
             log("  ✘ Se eligió GPU pero Vina-GPU no está instalado. Instálalo en Entorno (o corre "
                 "scripts/instalar_vina_gpu.sh), o cambia el dispositivo a CPU."); return False
@@ -142,12 +158,14 @@ class Motor:
     def etiqueta(self, d):
         if self.nombre == "vina-gpu":
             return vina_gpu.etiqueta(d)
+        if self.nombre == "smina" and self.scoring:
+            return f"smina · {self.scoring} · exhaustiveness {d['exhaustiveness']}"
         return (f"exhaustiveness {d['exhaustiveness']}" if self.nombre == "smina"
                 else f"AutoDock4 · {d.get('ad4_runs', 20)} corridas GA × {int(d.get('ad4_evals', 2500000)):,} evaluaciones")
 
     def dockear(self, diana_id, rec, lig, caja, salida, semilla, d, rehacer=False):
         if self.nombre == "smina":
-            return correr_smina(self.smina, rec, lig, caja, salida, semilla, d, rehacer)
+            return correr_smina(self.smina, rec, lig, caja, salida, semilla, d, rehacer, self.scoring)
         if self.nombre == "vina-gpu":
             return vina_gpu.correr(self.vgpu, rec, lig, caja, salida, semilla, d, rehacer)
         if is_complete(salida) and not rehacer:

@@ -6,13 +6,13 @@ import subprocess
 from . import config as C
 from . import ui
 
-OPCIONALES = {"PyMOL", "ProLIF", "MDAnalysis", "PLIP", "Vina", "matplotlib", "prepare_ligand",
+OPCIONALES = {"PyMOL", "ProLIF", "MDAnalysis", "PLIP", "Vina", "matplotlib", "ReportLab", "prepare_ligand",
               "autogrid4", "autodock4"}  # AutoDock4 sólo hace falta para átomos no comunes (metales)
 
 MODULOS = [("rdkit", "RDKit"), ("meeko", "Meeko"), ("openbabel.pybel", "Open Babel"), ("pdbfixer", "PDBFixer"),
            ("openmm", "OpenMM"), ("gemmi", "gemmi"), ("numpy", "numpy"), ("pandas", "pandas"),
            ("openpyxl", "openpyxl"), ("matplotlib", "matplotlib"), ("pymol", "PyMOL"), ("prolif", "ProLIF"),
-           ("MDAnalysis", "MDAnalysis"), ("plip", "PLIP"), ("vina", "Vina")]
+           ("MDAnalysis", "MDAnalysis"), ("plip", "PLIP"), ("vina", "Vina"), ("reportlab", "ReportLab")]
 
 # Cada import va en su propio proceso: si una librería crashea (p. ej. el conflicto swig de vina/openbabel)
 # no se lleva entre las patas al resto del chequeo ni da un falso "todo listo".

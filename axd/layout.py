@@ -143,6 +143,17 @@ class Layout:
     def redocking_result_pdbqt(self, target_id: str, seed) -> str:
         return self.r("04_Docking", "Results", "Redocking", f"{target_id}_crystal_s{seed}.pdbqt")
 
+    # ---- modo consenso: los motores adicionales guardan aparte; el motor principal
+    # del proyecto sigue en Results/ (así no se repite su cómputo).
+    def consensus_dir(self) -> str:
+        return self.r("04_Docking", "Consensus")
+
+    def consensus_result_pdbqt(self, engine: str, target_id: str, ligand_id: str, seed) -> str:
+        return self.r("04_Docking", "Consensus", engine, target_id, f"{ligand_id}_s{seed}.pdbqt")
+
+    def consensus_redocking_pdbqt(self, engine: str, target_id: str, seed) -> str:
+        return self.r("04_Docking", "Consensus", engine, "Redocking", f"{target_id}_crystal_s{seed}.pdbqt")
+
     def best_poses_dir(self) -> str:
         return self.r("04_Docking", "BestPoses")
 
@@ -177,6 +188,10 @@ class Layout:
     def logs_dir(self) -> str:
         return self.r("04_Docking", "logs")
 
+    def steps_state_file(self) -> str:
+        """Estado por paso de la última corrida (lo escribe pipeline/run.py; lo lee la GUI)."""
+        return self.r("04_Docking", "logs", "steps.json")
+
     def job_state_file(self) -> str:
         return self.r("04_Docking", "logs", "job.json")
 
@@ -201,6 +216,24 @@ class Layout:
 
     def redocking_summary_csv(self) -> str:
         return self.r("05_Analysis", "redocking_summary.csv")
+
+    def consensus_summary_csv(self) -> str:
+        return self.r("05_Analysis", "consensus_summary.csv")
+
+    def consensus_engines_csv(self) -> str:
+        return self.r("05_Analysis", "consensus_by_engine.csv")
+
+    def consensus_poses_csv(self) -> str:
+        return self.r("05_Analysis", "consensus_poses.csv")
+
+    def consensus_tau_csv(self) -> str:
+        return self.r("05_Analysis", "consensus_kendall.csv")
+
+    def consensus_redocking_csv(self) -> str:
+        return self.r("05_Analysis", "consensus_redocking.csv")
+
+    def consensus_meta_json(self) -> str:
+        return self.r("05_Analysis", "consensus_meta.json")
 
     def interactions_detail_csv(self) -> str:
         return self.r("05_Analysis", "interactions_detail.csv")

@@ -13,6 +13,7 @@ from ... import runner as R
 from ..dialogs.calibracion_dialog import CalibracionDialog
 from ..dialogs.restaurar_checkpoint_dialog import RestaurarCheckpointDialog
 from ..services import calibration, checkpoints as CK, compute_profile, reset_run
+from ..widgets.steps_list import StepsList
 
 
 def _tamano(n_bytes: int) -> str:
@@ -59,6 +60,12 @@ class ProcesoTab(QWidget):
         row.addWidget(self.stop_btn)
         row.addStretch(1)
         layout.addLayout(row)
+
+        pasos_title = QLabel("Pasos de la corrida")
+        pasos_title.setObjectName("Title")
+        layout.addWidget(pasos_title)
+        self.steps = StepsList(state)
+        layout.addWidget(self.steps)
 
         ck_row = QHBoxLayout()
         ck_label = QLabel("Checkpoints automáticos")
@@ -141,9 +148,7 @@ class ProcesoTab(QWidget):
             return
         p["docking"] = compute_profile.apply_to_docking_params(p["docking"])
         C.save_project(proy, p)
-        hay_ref = any(d.get("box", {}).get("mode") in ("ligand", "auto") for d in p["targets"])
-        pasos = [x for x in R.PASOS if x != "redocking" or hay_ref]
-        R.ejecutar(proy, pasos, fondo=True)
+        R.ejecutar(proy, self._pasos_planeados(p), fondo=True)
         self.refresh()
 
     def _resume(self) -> None:
@@ -179,6 +184,7 @@ class ProcesoTab(QWidget):
             self.checkpoints_list.clear()
             self.last_label.setText("")
             self.delete_btn.setEnabled(False)
+            self.steps.refresh(None, [])
             return
         e = R.estado(proy)
         done, total = CK.progress_fraction(proy)
@@ -196,6 +202,15 @@ class ProcesoTab(QWidget):
         self._update_eta(proy, done, total, running=bool(e and e.get("vivo")))
         self._refresh_checkpoints()
         self._refresh_last(proy, running=bool(e and e.get("vivo")))
+        try:
+            planeados = self._pasos_planeados(C.load_project(proy))
+        except (OSError, ValueError):
+            planeados = list(R.PASOS)
+        self.steps.refresh(proy, planeados)
+
+    @staticmethod
+    def _pasos_planeados(p) -> list[str]:
+        return R.pasos_planeados(p)
 
     def _refresh_last(self, proy, running: bool) -> None:
         s = reset_run.summary(proy)
@@ -204,7 +219,7 @@ class ProcesoTab(QWidget):
         else:
             self.last_label.setText(
                 f"{s['n_files']} archivos ({_tamano(s['bytes'])}) de docking, resumen e interacciones (pasos 5–7). "
-                "Al eliminarlos se guarda antes una copia .zip; los receptores y ligandos preparados se conservan."
+                "Al eliminarlos puedes guardar antes una copia .zip; los receptores y ligandos preparados se conservan."
                 + ("  · Detén el trabajo en curso para poder eliminar." if running else ""))
         self.delete_btn.setEnabled(bool(s["n_files"]) and not running)
 
@@ -220,31 +235,50 @@ class ProcesoTab(QWidget):
         if not s["n_files"]:
             QMessageBox.information(self, "Nada que eliminar", "No hay resultados de docking/análisis.")
             return
-        ok = QMessageBox.question(
-            self, "Eliminar último procesamiento",
-            f"Se eliminarán {s['n_files']} archivos ({_tamano(s['bytes'])}) del docking, el resumen y las "
-            "interacciones (pasos 5–7).\n\nSe conservan las estructuras, los receptores y ligandos preparados, "
-            "las cajas y el redocking.\n\nPrimero elegirás dónde guardar una copia .zip; sin esa copia no se borra "
-            "nada. ¿Continuar?")
-        if ok != QMessageBox.StandardButton.Yes:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Eliminar último procesamiento")
+        box.setText(f"Se eliminarán {s['n_files']} archivos ({_tamano(s['bytes'])}) del docking, el resumen y las "
+                    "interacciones (pasos 5–7).")
+        box.setInformativeText("Se conservan las estructuras, los receptores y ligandos preparados, las cajas y el "
+                               "redocking.\n\n¿Quieres guardar antes una copia .zip?")
+        guardar = box.addButton("Guardar copia y eliminar", QMessageBox.ButtonRole.AcceptRole)
+        solo = box.addButton("Eliminar sin copia", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(guardar)
+        box.exec()
+        elegido = box.clickedButton()
+        if elegido not in (guardar, solo):
             return
-        start = os.path.join(os.path.dirname(os.path.abspath(proy)), reset_run.default_backup_name(proy))
-        dest, _ = QFileDialog.getSaveFileName(self, "Guardar copia del procesamiento", start, "Archivo ZIP (*.zip)")
-        if not dest:
-            return  # sin copia no se borra
-        if not dest.lower().endswith(".zip"):
-            dest += ".zip"
+        dest = None
+        if elegido is guardar:
+            start = os.path.join(os.path.dirname(os.path.abspath(proy)), reset_run.default_backup_name(proy))
+            dest, _ = QFileDialog.getSaveFileName(self, "Guardar copia del procesamiento", start,
+                                                  "Archivo ZIP (*.zip)")
+            if not dest:
+                return  # canceló al elegir dónde guardar: no se borra nada
+            if not dest.lower().endswith(".zip"):
+                dest += ".zip"
+        else:
+            seguro = QMessageBox.warning(
+                self, "Eliminar sin copia",
+                "Los resultados se borrarán definitivamente y no se podrán recuperar.\n\n¿Eliminar sin copia?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if seguro != QMessageBox.StandardButton.Yes:
+                return
         try:
-            reset_run.make_backup(proy, dest)
+            if dest:
+                reset_run.make_backup(proy, dest)
             n = reset_run.remove(proy)
         except (IOError, RuntimeError) as ex:
-            QMessageBox.warning(self, "No se eliminó nada" if not os.path.exists(dest) else "Error", str(ex))
+            QMessageBox.warning(self, "No se eliminó nada", str(ex))
             self.refresh()
             return
         self.refresh()
+        donde = f"Copia guardada en:\n{dest}\n\n" if dest else "No se guardó copia.\n\n"
         again = QMessageBox.question(
             self, "Procesamiento eliminado",
-            f"Se eliminaron {n} archivos. Copia guardada en:\n{dest}\n\n¿Volver a correr el pipeline ahora?")
+            f"Se eliminaron {n} archivos. {donde}¿Volver a correr el pipeline ahora?")
         if again == QMessageBox.StandardButton.Yes:
             self._run()
 
