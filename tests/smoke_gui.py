@@ -39,6 +39,8 @@ def main() -> int:
     sys.path.insert(0, repo_root)
 
     from axd import config as C
+    from axd.gui.app import instalar_traduccion
+    instalar_traduccion(app)
     from axd.gui.main_window import MainWindow
     from axd.gui.services import calibration
 

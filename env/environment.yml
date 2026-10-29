@@ -38,6 +38,7 @@ dependencies:
   - vina
   - meeko
   - pyside6
+  - reportlab
   - pip
   - pip:
       - plip

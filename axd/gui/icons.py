@@ -27,6 +27,15 @@ _P = {
     "refresh": '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
     "folder-open": '<path d="M3 7h6l2 2h10v10H3z"/><path d="M3 19l3-7h17l-3 7"/>',
     "file": '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+    # estados de un paso (lista de Proceso)
+    "step-pending": '<rect x="4" y="4" width="16" height="16" rx="3"/>',
+    "step-running": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v4l3 2"/>',
+    "step-ok": '<rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor" stroke="none"/>'
+               '<path d="M8 12.5l3 3 5-6" stroke="#FFFFFF" stroke-width="2.2"/>',
+    "step-error": '<rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor" stroke="none"/>'
+                  '<path d="M9 9l6 6M15 9l-6 6" stroke="#FFFFFF" stroke-width="2.2"/>',
+    "step-skip": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/>',
+    "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
     # dispositivos
     "cpu": '<rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/>'
            '<path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',

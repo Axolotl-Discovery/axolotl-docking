@@ -79,7 +79,7 @@ def menu_correr(proy):
         # modo básico: todo el pipeline, en segundo plano, sin preguntas
         if not ui.si_no("¿Arranco el docking completo ahora? (corre en segundo plano)", True):
             return
-        runner.ejecutar(proy, [x for x in runner.PASOS if x != "redocking" or hay_ref], fondo=True)
+        runner.ejecutar(proy, runner.pasos_planeados(p), fondo=True)
         return
     op = ui.menu("¿Qué corremos?", [
         ("todo", "Pipeline completo" + ui.gris(" (descargar → receptores → ligandos → "
@@ -90,14 +90,12 @@ def menu_correr(proy):
     if op is None:
         return
     if op == "todo":
-        pasos = [x for x in runner.PASOS if x != "redocking" or hay_ref]
+        pasos = runner.pasos_planeados(p)
     elif op == "prep":
         pasos = ["download", "receptors", "ligands"] + (["redocking"] if hay_ref else [])
     else:
         pasos = []
-        for x in runner.PASOS:
-            if x == "redocking" and not hay_ref:
-                continue
+        for x in runner.pasos_planeados(p):
             if ui.si_no(f"{x:11s} — {runner.DESCRIPCION_PASOS[x]}", x != "redocking"):
                 pasos.append(x)
     if not pasos:

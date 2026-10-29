@@ -71,6 +71,10 @@ def stylesheet(tokens: dict) -> str:
     QToolButton#DeviceButton:disabled {{ background: {t['bg']}; }}
     QLabel#DeviceTitle {{ font-size: 15px; font-weight: 700; }}
     QFrame#Separator {{ color: {t['border']}; }}
+    QFrame#StepsList {{ background: {t['panel']}; border: 1px solid {t['border']}; border-radius: 10px; }}
+    QFrame#StepsList QLabel {{ background: transparent; }}
+    QToolButton#InfoButton {{ background: transparent; border: none; padding: 2px; }}
+    QToolButton#InfoButton:hover {{ background: {t['panel_alt']}; border-radius: 6px; }}
     QDockWidget {{ titlebar-close-icon: none; }}
     QDockWidget::title {{ background: {t['panel']}; padding: 6px; border-bottom: 1px solid {t['border']}; }}
     """

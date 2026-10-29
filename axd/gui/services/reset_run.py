@@ -35,12 +35,14 @@ def files_to_remove(proy) -> list[str]:
                 continue
             for root, _dirs, files in os.walk(d):
                 out += [os.path.join(root, f) for f in sorted(files)]
-    for d in (lay.best_poses_dir(), lay.complexes_dir()):
+    for d in (lay.best_poses_dir(), lay.complexes_dir(), lay.consensus_dir()):
         if os.path.isdir(d):
             for root, _dirs, files in os.walk(d):
                 out += [os.path.join(root, f) for f in sorted(files)]
     for f in (lay.affinities_summary_csv(), lay.affinity_matrix_csv(), lay.affinities_runs_csv(),
-              lay.interactions_detail_csv(), lay.interactions_summary_csv()):
+              lay.interactions_detail_csv(), lay.interactions_summary_csv(),
+              lay.consensus_summary_csv(), lay.consensus_engines_csv(), lay.consensus_poses_csv(),
+              lay.consensus_tau_csv(), lay.consensus_redocking_csv(), lay.consensus_meta_json()):
         if os.path.isfile(f):
             out.append(f)
     out += sorted(glob.glob(lay.affinities_xlsx_glob()))
@@ -121,6 +123,15 @@ def remove(proy) -> int:
     for d in (lay.best_poses_dir(), lay.complexes_dir()):
         if os.path.isdir(d) and not any(os.scandir(d)):
             os.rmdir(d)
+    cons = lay.consensus_dir()  # el árbol de consenso se vacía entero (tiene su propio redocking)
+    if os.path.isdir(cons):
+        for root, dirs, _files in os.walk(cons, topdown=False):
+            for sub in dirs:
+                p_ = os.path.join(root, sub)
+                if not os.listdir(p_):
+                    os.rmdir(p_)
+        if not os.listdir(cons):
+            os.rmdir(cons)
     res = lay.results_dir()
     if os.path.isdir(res):
         for name in os.listdir(res):

@@ -8,11 +8,12 @@ import os
 import shutil
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSpinBox,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+                               QGroupBox, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSpinBox,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ... import config as C
+from ... import consensus as K
 from ... import layout as L
 from ..dialogs.agregar_diana_dialog import AgregarDianaDialog
 from ..dialogs.agregar_ligando_dialog import AgregarLigandoDialog
@@ -314,6 +315,7 @@ class AnalisisTab(QWidget):
         self.energy_range.setRange(1, 20)
         form.addRow("Rango de energía", self.energy_range)
         v.addLayout(form)
+        v.addWidget(self._build_consenso_box())
         note = QLabel("El límite de núcleos (CPU) lo controla el perfil de cómputo, en la pestaña Entorno.")
         note.setObjectName("Muted")
         note.setWordWrap(True)
@@ -325,6 +327,72 @@ class AnalisisTab(QWidget):
         v.addStretch(1)
         self.stack.addWidget(w)
 
+    def _build_consenso_box(self) -> QGroupBox:
+        box = QGroupBox("Modo avanzado · consenso entre motores")
+        v = QVBoxLayout(box)
+        self.cons_on = QCheckBox("Activar consenso (varios motores + ECR)")
+        self.cons_on.setToolTip("Corre más de un motor de docking sobre los mismos pares y compara sus resultados.")
+        self.cons_on.toggled.connect(self._cons_toggled)
+        v.addWidget(self.cons_on)
+        desc = QLabel("Un ligando es un candidato más fiable si motores con funciones de puntuación distintas "
+                      "coinciden. Se combinan los rangos con ECR (Exponential Consensus Ranking) y se compara la "
+                      "pose entre motores.")
+        desc.setObjectName("Muted")
+        desc.setWordWrap(True)
+        v.addWidget(desc)
+        self.cons_vina = QCheckBox("Vina (el motor principal del proyecto; siempre incluido)")
+        self.cons_vina.setChecked(True)
+        self.cons_vina.setEnabled(False)
+        self.cons_vinardo = QCheckBox("Vinardo (smina con otra función de puntuación)")
+        self.cons_ad4 = QCheckBox("AutoDock4 (requiere ADFRsuite; el más lento)")
+        for c in (self.cons_vina, self.cons_vinardo, self.cons_ad4):
+            c.toggled.connect(self._cons_update_estimate)
+            v.addWidget(c)
+        self.cons_estimate = QLabel("")
+        self.cons_estimate.setObjectName("Muted")
+        self.cons_estimate.setWordWrap(True)
+        v.addWidget(self.cons_estimate)
+        self._cons_loading = False
+        return box
+
+    def _cons_engines(self) -> list[str]:
+        return [m for m, c in (("vina", self.cons_vina), ("vinardo", self.cons_vinardo), ("ad4", self.cons_ad4))
+                if c.isChecked()]
+
+    def _cons_update_estimate(self, *_a) -> None:
+        p = self._project()
+        on = self.cons_on.isChecked()
+        for c in (self.cons_vinardo, self.cons_ad4):
+            c.setEnabled(on)
+        if not p or not on:
+            self.cons_estimate.setText("Desactivado: el pipeline corre sólo el motor principal.")
+            return
+        pares, semillas = K.pares_del_proyecto(p), len(p["docking"].get("seeds") or [1])
+        extra = K.corridas_extra(pares, semillas, self._cons_engines())
+        total = sum(extra.values())
+        if not total:
+            self.cons_estimate.setText("Marca al menos un motor además de Vina para poder comparar.")
+            return
+        detalle = ", ".join(f"{K.nombre_motor(m)}: {n}" for m, n in extra.items())
+        self.cons_estimate.setText(
+            f"Se añaden {total} corridas de docking ({detalle}), más el redocking de cada motor. Tarda "
+            "bastante más y usa más CPU y disco; AutoDock4 suele ser el más lento. Al terminar, el reporte "
+            "incluye una sección que muestra las variaciones entre motores.")
+
+    def _cons_toggled(self, on: bool) -> None:
+        if on and not self._cons_loading:
+            r = QMessageBox.question(
+                self, "Activar el consenso",
+                "El consenso corre varios motores de docking sobre los mismos pares ligando–diana.\n\n"
+                "• Tarda más (cada motor extra repite todas las corridas).\n"
+                "• Usa más CPU, más disco y, con AutoDock4, mucho más tiempo.\n\n¿Activarlo?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if r != QMessageBox.StandardButton.Yes:
+                self.cons_on.blockSignals(True)
+                self.cons_on.setChecked(False)
+                self.cons_on.blockSignals(False)
+        self._cons_update_estimate()
+
     def _refresh_parametros(self) -> None:
         p = self._project()
         if not p:
@@ -334,6 +402,14 @@ class AnalisisTab(QWidget):
         self.exhaustiveness.setValue(d.get("exhaustiveness", 32))
         self.num_modes.setValue(d.get("num_modes", 9))
         self.energy_range.setValue(d.get("energy_range", 4))
+        c = d.get("consensus") or {}
+        motores = c.get("engines") or K.DEFAULT_ENGINES
+        self._cons_loading = True
+        self.cons_on.setChecked(bool(c.get("enabled")))
+        self.cons_vinardo.setChecked("vinardo" in motores)
+        self.cons_ad4.setChecked("ad4" in motores)
+        self._cons_loading = False
+        self._cons_update_estimate()
 
     def _save_params(self) -> None:
         p = self._project()
@@ -348,4 +424,5 @@ class AnalisisTab(QWidget):
         p["docking"]["exhaustiveness"] = self.exhaustiveness.value()
         p["docking"]["num_modes"] = self.num_modes.value()
         p["docking"]["energy_range"] = self.energy_range.value()
+        p["docking"]["consensus"] = {"enabled": self.cons_on.isChecked(), "engines": self._cons_engines()}
         self._save(p)

@@ -4,6 +4,7 @@ terminal (axd.resultados.menu_resultados), en la GUI:
   · Tabla de afinidades (por diana, ordenada, mejor ligando resaltado)
   · Matriz ligando × diana (coloreada por ΔG)
   · Validación por redocking (RMSD ≤ 2 Å)
+  · Consenso entre motores (sólo si se activó el modo avanzado): ΔG y rango por motor, ECR, veredicto
   · Interacciones (resumen por complejo + detalle del seleccionado)
   · Acciones: analizar interacciones ahora / actualizar tablas, ver complejo
     en 3D, abrir el Excel, abrir la carpeta del proyecto
@@ -21,12 +22,14 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLis
                                QMessageBox, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
+from ... import consensus as K
 from ... import resultados as RES
 from ... import runner as R
 from ...layout import Layout
 from .. import theme
 
-SECCIONES = ("Tabla de afinidades", "Matriz ligando × diana", "Validación (redocking)", "Interacciones", "Acciones")
+SECCIONES = ("Tabla de afinidades", "Matriz ligando × diana", "Validación (redocking)", "Consenso entre motores",
+             "Interacciones", "Acciones")
 TIPOS_ABREV = {"Hidrofóbica": "Hidrof.", "Puente de H": "Pte. H", "Apilamiento π": "π-π", "Catión-π": "Cat-π",
                "Puente salino": "Salino", "Enlace de halógeno": "Halóg.", "Puente de agua": "Agua",
                "Coordinación metálica": "Metal"}
@@ -71,6 +74,28 @@ def redocking_rows(proy):
         rmsd = _f(f.get("rmsd"))
         out.append(dict(f, ok=(rmsd is not None and rmsd <= 2.0)))
     return out
+
+
+def consensus_data(proy):
+    """(motores, {diana: [fila,…]}, taus por diana, meta) del último consenso, o ([], {}, {}, {})."""
+    import json
+    lay = Layout(proy)
+    filas = _read(lay.consensus_summary_csv())
+    if not filas:
+        return [], {}, {}, {}
+    motores = [c[3:] for c in filas[0] if c.startswith("dG_")]
+    por = {}
+    for f in filas:
+        por.setdefault(f.get("diana", ""), []).append(f)
+    taus = {}
+    for t in _read(lay.consensus_tau_csv()):
+        taus.setdefault(t.get("diana", ""), []).append(t)
+    try:
+        with open(lay.consensus_meta_json(), encoding="utf-8") as fh:
+            meta = json.load(fh)
+    except (OSError, ValueError):
+        meta = {}
+    return motores, por, taus, meta
 
 
 def interactions(proy):
@@ -147,6 +172,7 @@ class PostprocesoTab(QWidget):
         outer = QHBoxLayout(self)
         self.nav = QListWidget()
         self.nav.setMaximumWidth(230)
+        self.nav.setMinimumWidth(190)  # la tabla de consenso es ancha y no debe achicar el menú
         for s in SECCIONES:
             self.nav.addItem(QListWidgetItem(s))
         outer.addWidget(self.nav)
@@ -157,6 +183,7 @@ class PostprocesoTab(QWidget):
         self._build_afinidades()
         self._build_matriz()
         self._build_redocking()
+        self._build_consenso()
         self._build_interacciones()
         self._build_acciones()
         self.nav.setCurrentRow(0)
@@ -175,6 +202,7 @@ class PostprocesoTab(QWidget):
         self._refresh_afinidades(proy)
         self._refresh_matriz(proy)
         self._refresh_redocking(proy)
+        self._refresh_consenso(proy)
         self._refresh_interacciones(proy)
         self._refresh_acciones(proy)
 
@@ -280,6 +308,78 @@ class PostprocesoTab(QWidget):
             ok.setForeground(QBrush(QColor(t["success"] if f["ok"] else t["error"])))
             self.rd_table.setItem(r, 4, ok)
 
+    # ---------------------------------------------------------------- consenso
+    def _build_consenso(self):
+        w, v, self.cs_empty = _page("Consenso entre motores (ECR + acuerdo de poses)")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Diana:"))
+        self.cs_target = QComboBox()
+        self.cs_target.currentIndexChanged.connect(lambda _i: self._fill_consenso())
+        row.addWidget(self.cs_target)
+        row.addStretch(1)
+        v.addLayout(row)
+        self.cs_table = _table([])
+        v.addWidget(self.cs_table, 1)
+        self.cs_tau = QLabel("")
+        self.cs_tau.setWordWrap(True)
+        v.addWidget(self.cs_tau)
+        note = QLabel(f"ΔG en kcal/mol · «#» = rango en ese motor · ECR# = posición por consenso (1 = mejor) · "
+                      f"RMSD máx = mayor distancia entre las mejores poses de dos motores · veredicto: Robusto = "
+                      f"rangos (dispersión ≤ {K.SPREAD_OK}) y poses (≤ {K.RMSD_OK} Å) coinciden; Parcial = sólo uno "
+                      f"de los dos; Discrepante = ninguno.")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        v.addWidget(note)
+        self.stack.addWidget(w)
+        self._cs = ([], {}, {}, {})
+
+    def _refresh_consenso(self, proy):
+        self._cs = consensus_data(proy) if proy else ([], {}, {}, {})
+        _m, por, _t, _meta = self._cs
+        prev = self.cs_target.currentText()
+        self.cs_target.blockSignals(True)
+        self.cs_target.clear()
+        for d in por:
+            self.cs_target.addItem(d)
+        if prev in por:
+            self.cs_target.setCurrentText(prev)
+        self.cs_target.blockSignals(False)
+        self.cs_empty.setText("" if por else
+                              "Sin consenso todavía. Actívalo en Proyecto → Parámetros → Modo avanzado y corre el "
+                              "proceso (el paso «consenso» corre después del docking).")
+        self.cs_empty.setVisible(not por)
+        self._fill_consenso()
+
+    def _fill_consenso(self):
+        motores, por, taus, meta = self._cs
+        filas = por.get(self.cs_target.currentText(), [])
+        nombres = [K.nombre_motor(m, (meta or {}).get("principal_real")).split(" (")[0] for m in motores]
+        heads = ["Ligando"] + [f"ΔG {n}" for n in nombres] + [f"# {n}" for n in nombres] \
+            + ["ECR#", "Disp.", "RMSD máx (Å)", "Veredicto"]
+        self.cs_table.clear()
+        self.cs_table.setColumnCount(len(heads))
+        self.cs_table.setHorizontalHeaderLabels(heads)
+        self.cs_table.setRowCount(len(filas))
+        t = theme.tokens_for(self.state.theme)
+        color = {K.ROBUSTO: t["success"], K.DISCREPANTE: t["error"], K.PARCIAL: t["accent"]}
+        for r, f in enumerate(filas):
+            vals = [f.get("ligando", "") + ("  ◆" if f.get("tipo") == "control" else "")]
+            vals += [_num(f.get(f"dG_{m}")) for m in motores]
+            vals += [("" if _f(f.get(f"rango_{m}")) is None else f"{_f(f.get(f'rango_{m}')):g}") for m in motores]
+            vals += [str(f.get("orden", "") or "—"), _num(f.get("dispersion_rangos"), 1), _num(f.get("rmsd_max"), 1)]
+            for c, txt in enumerate(vals):
+                self.cs_table.setItem(r, c, _item(txt, numeric=c > 0, bold=f.get("orden") == "1"))
+            it = _item(f.get("veredicto", ""))
+            it.setToolTip(f.get("motivo", ""))
+            if f.get("veredicto") in color:
+                it.setForeground(QBrush(QColor(color[f["veredicto"]])))
+            self.cs_table.setItem(r, len(vals), it)
+        pares = taus.get(self.cs_target.currentText(), [])
+        partes = [f"{K.nombre_motor(p['motor_a'])} ↔ {K.nombre_motor(p['motor_b'])}: τ = {_num(p.get('tau'))}"
+                  for p in pares if _f(p.get("tau")) is not None]
+        self.cs_tau.setText("Acuerdo entre motores (τ de Kendall; 1 = mismo orden): " + " · ".join(partes)
+                            if partes else "")
+
     # ---------------------------------------------------------------- interacciones
     def _build_interacciones(self):
         w, v, self.in_empty = _page("Interacciones por complejo (mejor pose)")
@@ -370,6 +470,10 @@ class PostprocesoTab(QWidget):
             ("Analizar interacciones ahora / actualizar tablas",
              "Corre en segundo plano los pasos 'resumen' e 'interacciones' sobre los resultados que ya hay.",
              self._analizar, True),
+            ("Generar reporte PDF",
+             "Reporte profesional con logos, métodos, tablas, figuras y referencias (07_Report). Los logos y el "
+             "laboratorio se configuran en Entorno → Reporte.", self._generar_reporte, True),
+            ("Abrir último reporte", "El PDF más reciente de 07_Report.", self._abrir_reporte, False),
             ("Ver un complejo en 3D", "Abre el visor de la pestaña Resultados.", self._ver_3d, False),
             ("Abrir el Excel de resultados", "El .xlsx que genera el paso 'resumen'.", self._abrir_excel, False),
             ("Abrir la carpeta del proyecto", "En el Finder / Explorador / gestor de archivos.", self._abrir_carpeta,
@@ -419,6 +523,28 @@ class PostprocesoTab(QWidget):
             QMessageBox.information(self, "No hay Excel", "No hay Excel todavía (se genera en el paso 'resumen').")
             return
         RES.abrir_en_windows(xl[0])
+
+    def _generar_reporte(self):
+        proy = self.state.project
+        if not proy:
+            return
+        e = R.estado(proy)
+        if e and e.get("vivo"):
+            QMessageBox.information(self, "Trabajo en curso", "Ya hay un trabajo corriendo; espera a que termine.")
+            return
+        R.ejecutar(proy, ["report"], fondo=True)
+        self.ac_status.setText("Generando el reporte en segundo plano… quedará en 07_Report "
+                               "(«Abrir último reporte» cuando termine).")
+
+    def _abrir_reporte(self):
+        proy = self.state.project
+        d = Layout(proy).report_dir() if proy else ""
+        pdfs = sorted((f for f in glob.glob(os.path.join(d, "*.pdf")) if not f.endswith("reporte_ultimo.pdf")),
+                      key=os.path.getmtime) if d else []
+        if not pdfs:
+            QMessageBox.information(self, "Sin reporte", "Todavía no hay reportes. Usa «Generar reporte PDF».")
+            return
+        RES.abrir_en_windows(pdfs[-1])
 
     def _abrir_carpeta(self):
         if self.state.project:

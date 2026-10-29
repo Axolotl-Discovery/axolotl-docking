@@ -11,16 +11,30 @@ from . import config as C
 from . import ui
 from .layout import Layout
 
-PASOS = ["download", "receptors", "ligands", "redocking", "docking", "summary", "interactions"]
+PASOS = ["download", "receptors", "ligands", "redocking", "docking", "consensus", "summary", "interactions", "report"]
 DESCRIPCION_PASOS = {
     "download": "Descargar estructuras (RCSB / AlphaFold) y ligandos (PubChem)",
     "receptors": "Limpiar receptores (PDBFixer + prepare_receptor) y calcular cajas",
     "ligands": "Preparar ligandos y controles (3D + Meeko → PDBQT)",
     "redocking": "Validación por redocking del ligando cristalográfico (RMSD)",
-    "docking": "Docking smina: todos los ligandos × todas las dianas × semillas",
+    "docking": "Docking: todos los ligandos × todas las dianas × semillas",
+    "consensus": "Consenso entre motores (Vina, Vinardo, AutoDock4): ECR y acuerdo de poses [modo avanzado]",
     "summary": "Tabla de afinidades (media ± DE, LE, Δ vs control) y mejores poses",
     "interactions": "Complejo proteína+ligando en un PDB y análisis de interacciones (PLIP)",
+    "report": "Reporte PDF (métodos, resultados, figuras y referencias) en 07_Report",
 }
+
+
+def consenso_activo(p) -> bool:
+    """¿El proyecto (dict de axd.json) tiene activado el modo consenso?"""
+    return bool((p.get("docking", {}).get("consensus") or {}).get("enabled"))
+
+
+def pasos_planeados(p) -> list[str]:
+    """Pasos que corresponden a un proyecto: sin redocking si ninguna diana tiene ligando de
+    referencia, y sin consenso si el modo avanzado no está activado."""
+    hay_ref = any(d.get("box", {}).get("mode") in ("ligand", "auto") for d in p["targets"])
+    return [x for x in PASOS if (x != "redocking" or hay_ref) and (x != "consensus" or consenso_activo(p))]
 
 
 def _logs(proy):
@@ -122,6 +136,7 @@ def ejecutar(proy, pasos, fondo=True, extra=None):
     sello = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs(_logs(proy), exist_ok=True)
     log = Layout(proy).pipeline_log(sello)
+    env["AXD_LOG"] = log  # pipeline/steps_state.py lo anota en steps.json (la GUI enlaza el log completo)
     cmd = ["bash", "-c", _script_entorno(None), "axd"] + args
     if fondo:
         with open(log, "w") as fh:
@@ -288,6 +303,26 @@ def mostrar_avance(proy):
                       f"   Tiempo restante estimado: ~{seg / 60:.0f} min")
         except ValueError:
             pass
+
+
+def estado_pasos(proy):
+    """Estado por paso de la última corrida (04_Docking/logs/steps.json), o None si
+    nunca se corrió con esta versión. Un paso que quedó 'en_curso' sin un trabajo vivo
+    (se detuvo, se cerró la terminal, se cortó la luz) se reporta como 'interrumpido'."""
+    f = Layout(proy).steps_state_file()
+    try:
+        with open(f, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    e = estado(proy)
+    vivo = bool(e and e.get("vivo"))
+    for p in data.get("pasos", []):
+        if p.get("estado") == "en_curso" and not vivo:
+            p["estado"] = "interrumpido"
+            p.setdefault("errores", []).append("El trabajo se detuvo antes de terminar este paso.")
+    data["vivo"] = vivo
+    return data
 
 
 def _ultimo_error(e):

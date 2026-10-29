@@ -48,6 +48,11 @@ def run(P, rehacer=False):
             rd = P.layout.redocking_summary_csv()
             if os.path.exists(rd):
                 pd.read_csv(rd).to_excel(xw, sheet_name="Redocking", index=False)
+            for hoja, f in (("Consenso", P.layout.consensus_summary_csv()),
+                            ("Consenso poses", P.layout.consensus_poses_csv()),
+                            ("Consenso Kendall", P.layout.consensus_tau_csv())):
+                if os.path.exists(f):
+                    pd.read_csv(f).to_excel(xw, sheet_name=hoja, index=False)
         xlsx = True
     except Exception:  # noqa: BLE001  (openpyxl no instalado)
         xlsx = False

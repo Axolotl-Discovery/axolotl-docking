@@ -35,6 +35,8 @@ DEFAULT_DOCKING = {
     "cpu": 0,  # 0 = todos los núcleos
     "ad4_runs": 20,         # sólo con átomos no comunes (AutoDock4): corridas GA por semilla
     "ad4_evals": 2500000,   # evaluaciones de energía por corrida
+    # modo avanzado (opt-in): varios motores + ECR. "vina" = el motor principal del proyecto
+    "consensus": {"enabled": False, "engines": ["vina", "vinardo", "ad4"]},
 }
 
 
