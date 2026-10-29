@@ -54,7 +54,7 @@ def main(argv):
                 tracker.terminar(paso, 1, excepcion=True)
                 return 130
             except Exception:  # noqa: BLE001
-                traceback.print_exc()
+                traceback.print_exc(file=sys.stdout)  # a stdout: así el tracker lo guarda y la GUI lo muestra
                 print(f"✘ El paso '{paso}' terminó con error.")
                 f, excepcion = 1, True
             tracker.terminar(paso, f, excepcion)

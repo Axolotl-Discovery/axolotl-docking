@@ -1,5 +1,6 @@
 """Lista de pasos de Proceso: el pipeline anota el estado de cada paso y sus errores."""
 import json
+import os
 import sys
 
 import pytest
@@ -78,3 +79,28 @@ def test_filas_para_la_gui(proy):
         {"id": "docking", "titulo": "D", "estado": "pendiente", "errores": []}]}
     f = filas(data, [])
     assert [x["estado"] for x in f] == ["error", "no_ejecutado"] and "1 problema" in f[0]["detalle"]
+
+
+def test_traceback_de_un_paso_llega_al_reporte_de_error(tmp_path, monkeypatch):
+    """Regresión: run.py imprimía el traceback a stderr y el reporte sólo decía «terminó con error»."""
+    import json
+    import subprocess
+    import sys
+    import textwrap
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script = textwrap.dedent(f"""
+        import sys, traceback
+        sys.path.insert(0, {os.path.join(root, 'pipeline')!r})
+        from steps_state import StepTracker
+        t = StepTracker({str(tmp_path / 's.json')!r}, ['a'], {{}})
+        t.iniciar('a')
+        try:
+            1 / 0
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+        t.terminar('a', 1, True)
+        t.cerrar()
+    """)
+    subprocess.run([sys.executable, "-c", script], check=True, capture_output=True)
+    errores = json.load(open(tmp_path / "s.json"))["pasos"][0]["errores"]
+    assert any("ZeroDivisionError" in e for e in errores)
