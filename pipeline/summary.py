@@ -28,14 +28,14 @@ def run(P, rehacer=False):
     res = (df.groupby(["diana", "ligando", "nombre", "tipo"], sort=False)
              .agg(afinidad_media=("afinidad", "mean"), afinidad_de=("afinidad", "std"), mejor=("afinidad", "min"),
                   n_semillas=("afinidad", "size"), n_pesados=("n_pesados", "first")).reset_index())
-    res["LE"] = -res["afinidad_media"] / res["n_pesados"]
+    res["LE"] = -res["afinidad_media"] / pd.to_numeric(res["n_pesados"], errors="coerce")
     ctrl = res[res.tipo == "control"].sort_values("afinidad_media").groupby("diana").first()
     res["control_ref"] = res.diana.map(ctrl["ligando"]) if len(ctrl) else None
     res["afinidad_control"] = res.diana.map(ctrl["afinidad_media"]) if len(ctrl) else None
     res["delta_vs_control"] = res["afinidad_media"] - res["afinidad_control"]
     res = res.sort_values(["diana", "afinidad_media"]).round(3)
     res.to_csv(P.layout.affinities_summary_csv(), index=False)
-    mat = res.pivot(index="ligando", columns="diana", values="afinidad_media")
+    mat = res.pivot_table(index="ligando", columns="diana", values="afinidad_media", aggfunc="mean")
     mat.to_csv(P.layout.affinity_matrix_csv())
 
     nombre_seguro = re.sub(r"[^A-Za-z0-9._-]+", "_", P.cfg["name"])
