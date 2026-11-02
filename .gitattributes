@@ -4,3 +4,4 @@ bin/* text eol=lf
 axd/gui/vendor/** -diff linguist-vendored
 # Los .bat de Windows necesitan fin de línea CRLF para que cmd.exe no se confunda
 *.bat text eol=crlf
+*.command text eol=lf

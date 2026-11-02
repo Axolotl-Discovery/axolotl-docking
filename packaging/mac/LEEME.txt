@@ -1,0 +1,14 @@
+AXOLOTL DOCKING para macOS
+==========================
+
+1. Descomprime este .zip.
+2. Haz clic derecho en "Instalar Axolotl Docking.command" -> Abrir -> Abrir.
+   (La primera vez macOS avisa de "desarrollador no identificado": es normal,
+   el archivo no esta firmado. Es un script de texto que puedes leer antes.)
+3. Espera 15-30 minutos (necesita internet y ~6 GB libres).
+4. Abre una Terminal nueva y escribe:  Docking
+
+En Mac con Apple Silicon (M1/M2/M3...) el instalador activa Rosetta 2 si hace falta.
+Si el doble clic no abre nada, en Terminal:  bash "Instalar Axolotl Docking.command"
+
+Proyecto: https://github.com/Axolotl-Discovery/axolotl-docking

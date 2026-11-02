@@ -1,9 +1,13 @@
-name: Windows installer (.exe)
+name: Descargas (Windows .exe, Linux .sh, Mac .zip)
 
-# Compila windows/axolotl-docking.iss con Inno Setup en un runner de Windows y
-# lo publica en GitHub Releases al subir una etiqueta vX.Y.Z. También se puede
-# lanzar a mano (workflow_dispatch) para obtener el .exe como artefacto sin
-# publicar nada. No corre en cada push, igual que el resto de workflows del repo.
+# Construye los tres archivos descargables con nombre fijo:
+#   AxolotlDocking-Windows.exe   (Inno Setup, runner Windows)
+#   AxolotlDocking-Linux.sh      (copia de install.sh, para correr con bash)
+#   AxolotlDocking-Mac.zip       (.command de doble clic + LEEME.txt)
+# y, al subir una etiqueta vX.Y.Z, los publica en GitHub Releases. Con ello los
+# enlaces  .../releases/latest/download/<archivo>  de la página siempre bajan la
+# última versión. También se puede lanzar a mano (workflow_dispatch) para obtener
+# los archivos como artefactos sin publicar nada. No corre en cada push.
 on:
   workflow_dispatch:
   push:
@@ -13,7 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,11 +38,44 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AxolotlDocking-Setup-${{ steps.ver.outputs.v }}
-          path: dist/*.exe
+          name: windows
+          path: dist/AxolotlDocking-Windows.exe
 
-      - name: Publicar en Releases (solo con etiqueta)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  linux-mac:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Empaquetar Linux y Mac
+        run: |
+          mkdir -p dist
+          bash -n install.sh
+          bash -n "packaging/mac/Instalar Axolotl Docking.command"
+          cp install.sh dist/AxolotlDocking-Linux.sh
+          chmod +x dist/AxolotlDocking-Linux.sh
+          (cd packaging/mac && zip -X ../../dist/AxolotlDocking-Mac.zip "Instalar Axolotl Docking.command" LEEME.txt)
+          unzip -Z dist/AxolotlDocking-Mac.zip
+
+      - uses: actions/upload-artifact@v4
         with:
-          files: dist/*.exe
+          name: linux-mac
+          path: |
+            dist/AxolotlDocking-Linux.sh
+            dist/AxolotlDocking-Mac.zip
+
+  publicar:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/AxolotlDocking-Windows.exe
+            dist/AxolotlDocking-Linux.sh
+            dist/AxolotlDocking-Mac.zip
