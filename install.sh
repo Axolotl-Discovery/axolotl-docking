@@ -55,12 +55,30 @@ main() {
   for c in git python3 curl tar; do command -v "$c" >/dev/null || falta+=("$c"); done
   if [ ${#falta[@]} -gt 0 ]; then
     if [ "$SO" = "Darwin" ]; then
-      echo "✘ Falta(n): ${falta[*]}. En macOS, instalá las herramientas de línea de comandos de Xcode"
-      echo "  ('xcode-select --install') y volvé a correr este instalador."
+      echo "✘ Falta(n): ${falta[*]}. En macOS, instala las herramientas de línea de comandos de Xcode"
+      echo "  ('xcode-select --install') y vuelve a correr este instalador."
       exit 1
     fi
     echo "· Instalando dependencias del sistema: ${falta[*]} (puede pedir tu contraseña)"
     sudo apt-get update -qq && sudo apt-get install -y -qq "${falta[@]}"
+  fi
+
+  # --- comprobaciones previas: mejor avisar ahora que fallar a los 15 minutos
+  if [ "$SOLO_APP" = 0 ]; then
+    local LIBRE_KB; LIBRE_KB="$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')"
+    if [ -n "$LIBRE_KB" ] && [ "$LIBRE_KB" -lt 6000000 ]; then
+      echo "${A}✘ Poco espacio en disco: $((LIBRE_KB / 1024 / 1024)) GB libres en $HOME; se necesitan unos 6 GB.${N}"
+      echo "  Libera espacio y vuelve a correr el instalador (lo ya instalado se respeta)."
+      exit 1
+    fi
+    if ! curl -fsSI -m 15 https://github.com >/dev/null 2>&1; then
+      echo "${A}✘ No hay conexión con github.com.${N} Revisa tu internet, tu VPN o el proxy de tu red y vuelve a correr el instalador."
+      exit 1
+    fi
+    if [ "$SO" = "Linux" ] && grep -qi microsoft /proc/version 2>/dev/null && ! grep -qi wsl2 /proc/version 2>/dev/null; then
+      echo "${A}⚠ Parece WSL 1: la instalación es lenta y algunas herramientas pueden fallar.${N}"
+      echo "  Pasa Ubuntu a WSL 2 desde PowerShell:  wsl --set-version Ubuntu 2"
+    fi
   fi
 
   # --- código: si se corre desde un clon, se usa ese; si no, se clona
@@ -132,16 +150,28 @@ elif "entorno" not in c:
 json.dump(c, open(f, "w"), indent=2)
 PY
 
+  local RC_ENTORNO=0
   if [ "$SOLO_APP" = 0 ]; then
-    bash "$DEST/scripts/instalar_entorno.sh" "${EXTRA[@]+"${EXTRA[@]}"}"
+    bash "$DEST/scripts/instalar_entorno.sh" "${EXTRA[@]+"${EXTRA[@]}"}" || RC_ENTORNO=$?
   else
     echo "· Instalación sólo de la app. Para el entorno después:  Docking entorno"
   fi
 
+  if [ "$RC_ENTORNO" != 0 ]; then
+    echo
+    echo "${A}⚠ El entorno no quedó completo.${N} Es seguro volver a correr este mismo instalador: retoma donde se quedó."
+    echo "  Si se repite, copia las líneas con ✘ de arriba y mándalas a quien te dio el curso."
+    echo "  Para ver qué falta:  Docking entorno"
+    exit "$RC_ENTORNO"
+  fi
   echo
   echo "${V}✔ Listo.${N} Abre una terminal nueva (o corre: source ${RCS[0]}) y escribe:"
   echo
   echo "      ${R}Docking${N}"
+  echo
+  echo "  Antes de empezar, comprueba que todo funciona (hace un docking de prueba, ~2 min):"
+  echo
+  echo "      ${R}Docking verificar${N}"
   echo
 }
 
