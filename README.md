@@ -300,3 +300,7 @@ entornos propios (`pytest` y `QT_QPA_PLATFORM=offscreen python tests/smoke_gui.p
 - Tras un apagón: `Docking reanudar` limpia archivos a medias y sigue con lo que falta.
 - «Rehacer desde cero» no borra nada: mueve los resultados anteriores a `04_Docking/Resultados_respaldo_<fecha>/`.
 - Desinstalar: `bash ~/.axolotl-docking/uninstall.sh` (no toca proyectos, entorno ni `~/tools`).
+
+## Licencia
+
+Uso gratuito con fines personales, educativos y de investigación, bajo una [licencia provisional](LICENSE) mientras se decide la definitiva. Los componentes de terceros que instala (smina, ADFRsuite, RDKit, Open Babel, PLIP…) conservan sus propias licencias.
