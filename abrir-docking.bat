@@ -5,14 +5,14 @@ setlocal EnableExtensions
 chcp 65001 >nul
 title Axolotl Docking
 wsl -d Ubuntu -e true >nul 2>&1
-if errorlevel 1 (
+if not %errorlevel%==0 (
   echo  [X] No encuentro Ubuntu en WSL. Ejecuta primero  instalar-windows.bat
   echo.
   pause
   exit /b 1
 )
 wsl -d Ubuntu -- bash -lic "Docking gui"
-if errorlevel 1 (
+if not %errorlevel%==0 (
   echo.
   echo  [X] No se pudo abrir la interfaz grafica. Prueba:
   echo      1. Abre PowerShell y ejecuta:  wsl --update
