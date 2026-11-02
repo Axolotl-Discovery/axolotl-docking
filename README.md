@@ -18,9 +18,9 @@ Es **gratuito**. Necesitas internet (descarga 2–3 GB), unos **6 GB libres** y 
 
 | Sistema | Qué hacer |
 |---|---|
-| **Windows 10/11** | **Recomendado:** descarga `AxolotlDocking-Setup-<versión>.exe` desde [Releases](https://github.com/Axolotl-Discovery/axolotl-docking/releases), ejecútalo y deja marcada la casilla final (activa WSL2 + Ubuntu e instala todo; reinicia si lo pide y vuelve a ejecutar «Instalar o reparar Axolotl Docking»). *Alternativa manual:* descarga el proyecto (**Code → Download ZIP**), descomprímelo y haz **doble clic en `instalar-windows.bat`**. Activa WSL2 + Ubuntu (acepta el permiso de administrador y reinicia si lo pide), crea tu usuario de Ubuntu y **vuelve a ejecutar** `instalar-windows.bat`. Para usarlo: doble clic en `abrir-docking.bat`. |
+| **Windows 10/11** | **Recomendado:** descarga `AxolotlDocking-Windows.exe` desde [Releases](https://github.com/Axolotl-Discovery/axolotl-docking/releases), ejecútalo y deja marcada la casilla final (activa WSL2 + Ubuntu e instala todo; reinicia si lo pide y vuelve a ejecutar «Instalar o reparar Axolotl Docking»). *Alternativa manual:* descarga el proyecto (**Code → Download ZIP**), descomprímelo y haz **doble clic en `instalar-windows.bat`**. Activa WSL2 + Ubuntu (acepta el permiso de administrador y reinicia si lo pide), crea tu usuario de Ubuntu y **vuelve a ejecutar** `instalar-windows.bat`. Para usarlo: doble clic en `abrir-docking.bat`. |
 | **Linux** | Pega en una terminal la línea de abajo y abre una terminal nueva al terminar. |
-| **macOS** | Igual que Linux (en Apple Silicon se activa Rosetta 2 si hace falta). |
+| **macOS** | Descarga `AxolotlDocking-Mac.zip` desde [Releases](https://github.com/Axolotl-Discovery/axolotl-docking/releases), descomprímelo y abre `Instalar Axolotl Docking.command` (clic derecho → Abrir la primera vez). *Alternativa:* el comando de una línea, igual que Linux. En Apple Silicon se activa Rosetta 2 si hace falta. |
 
 Al final, `Docking verificar` corre un docking de prueba (tripsina + bencenamidina, 1–3 min) y debe terminar con **«Todo está listo»**. En Windows se ejecuta solo.
 
