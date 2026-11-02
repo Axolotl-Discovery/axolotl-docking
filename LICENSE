@@ -1,0 +1,29 @@
+Axolotl Docking — LICENCIA DE USO GRATUITO (PROVISIONAL)
+Copyright (c) 2026 Axolotl-Discovery
+
+Esta licencia es temporal: se usa mientras se decide la licencia definitiva del proyecto.
+
+1. Permisos. Se concede permiso, sin costo, para usar, copiar y compartir este software y sus
+   archivos de documentación, y para modificarlos para uso propio, con fines personales,
+   educativos y de investigación.
+
+2. Condiciones.
+   a) Debe conservarse este aviso en todas las copias.
+   b) No se puede vender el software ni cobrar por él o por su distribución.
+   c) Los resultados que se obtengan al usarlo son de quien los genera. Se agradece citar el
+      proyecto (la forma de citarlo se publicará en el repositorio).
+
+3. Componentes de terceros. Axolotl Docking usa, instala o invoca otros programas y bibliotecas
+   (por ejemplo smina, AutoDock Vina, ADFRsuite, RDKit, Meeko, Open Babel, PLIP, PySide6,
+   3Dmol.js y ReportLab). Cada uno conserva su propia licencia y sus propias condiciones, que
+   esta licencia no modifica ni reemplaza. Quien los use o los redistribuya debe cumplirlas.
+
+4. Cambios futuros. Los titulares del proyecto pueden publicar una licencia distinta para
+   versiones posteriores. Las copias ya recibidas mantienen estas condiciones para la versión
+   que se recibió.
+
+5. Sin garantía. EL SOFTWARE SE ENTREGA «TAL CUAL», SIN GARANTÍA DE NINGÚN TIPO, EXPLÍCITA O
+   IMPLÍCITA, INCLUIDAS LAS DE COMERCIALIZACIÓN, IDONEIDAD PARA UN FIN PARTICULAR Y NO
+   INFRACCIÓN. LAS AFINIDADES DE DOCKING SON ESTIMACIONES COMPUTACIONALES Y NO SUSTITUYEN LA
+   VALIDACIÓN EXPERIMENTAL. LOS AUTORES NO SERÁN RESPONSABLES DE NINGUNA RECLAMACIÓN, DAÑO U
+   OTRA RESPONSABILIDAD DERIVADA DEL USO DEL SOFTWARE.
