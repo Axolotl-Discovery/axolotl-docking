@@ -1,0 +1,44 @@
+name: Windows installer (.exe)
+
+# Compila windows/axolotl-docking.iss con Inno Setup en un runner de Windows y
+# lo publica en GitHub Releases al subir una etiqueta vX.Y.Z. También se puede
+# lanzar a mano (workflow_dispatch) para obtener el .exe como artefacto sin
+# publicar nada. No corre en cada push, igual que el resto de workflows del repo.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Leer versión
+        id: ver
+        shell: bash
+        run: echo "v=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Compilar instalador
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.v }}" windows\axolotl-docking.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AxolotlDocking-Setup-${{ steps.ver.outputs.v }}
+          path: dist/*.exe
+
+      - name: Publicar en Releases (solo con etiqueta)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
