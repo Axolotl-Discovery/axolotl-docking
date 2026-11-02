@@ -12,6 +12,21 @@ Te pregunta las rutas y datos del proyecto (dianas, ligandos, controles) y hace 
 
 ## Instalación (una línea)
 
+### Guía rápida para quien empieza
+
+Es **gratuito**. Necesitas internet (descarga 2–3 GB), unos **6 GB libres** y 15–30 minutos.
+
+| Sistema | Qué hacer |
+|---|---|
+| **Windows 10/11** | Descarga el proyecto (**Code → Download ZIP**), descomprímelo y haz **doble clic en `instalar-windows.bat`**. Activa WSL2 + Ubuntu (acepta el permiso de administrador y reinicia si lo pide), crea tu usuario de Ubuntu y **vuelve a ejecutar** `instalar-windows.bat`. Para usarlo: doble clic en `abrir-docking.bat`. |
+| **Linux** | Pega en una terminal la línea de abajo y abre una terminal nueva al terminar. |
+| **macOS** | Igual que Linux (en Apple Silicon se activa Rosetta 2 si hace falta). |
+
+Al final, `Docking verificar` corre un docking de prueba (tripsina + bencenamidina, 1–3 min) y debe terminar con **«Todo está listo»**. En Windows se ejecuta solo.
+
+Guía completa con la solución a los errores comunes: [docs/INSTALACION.md](docs/INSTALACION.md).
+
+
 Funciona igual en **WSL (Ubuntu)**, **Linux nativo** y **macOS** — en una terminal:
 
 ```bash
@@ -59,6 +74,26 @@ curl -fsSL .../install.sh | AXD_ENV=mi-entorno bash
 ```
 
 Al terminar, abre una terminal nueva (o `source ~/.bashrc`) y escribe `Docking`.
+
+---
+
+## Así se ve
+
+La interfaz gráfica (`Docking gui`, o `abrir-docking.bat` en Windows) organiza el trabajo en pestañas: **Proyecto → Proceso → Resultados → Postprocesamiento → Entorno**.
+
+**Proyecto**: dianas, ligandos y controles, caja de docking y parámetros.
+
+![Pestaña Proyecto](docs/img/gui-proyecto.png)
+
+**Proceso**: lista de pasos con avance, checkpoints y botón para correr el pipeline. Si un paso falla, el ⓘ rojo muestra el motivo.
+
+![Pestaña Proceso](docs/img/gui-proceso.png)
+
+**Modo consenso** (avanzado) y su sección en el reporte PDF. *Capturas con datos de demostración simulados, no son resultados reales.*
+
+![Consenso entre motores](docs/img/gui-consenso-demo.png)
+
+![Página del reporte con consenso](docs/img/reporte-consenso-demo.png)
 
 ---
 

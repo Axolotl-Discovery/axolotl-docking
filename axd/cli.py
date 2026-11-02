@@ -21,6 +21,7 @@ Uso:  Docking                    abre el menú interactivo
       Docking log     [carpeta]  ver el log en vivo
       Docking detener [carpeta]  detener el trabajo en segundo plano
       Docking reanudar[carpeta]  retomar donde se quedó (p. ej. tras un corte de luz)
+      Docking verificar          comprobar la instalación con un docking de prueba (recomendado al instalar)
       Docking entorno            verificar / instalar conda, smina y ADFRsuite
       Docking hardware           ver el equipo (CPU, GPU, memoria) y la optimización sugerida
       Docking actualizar         bajar la última versión desde GitHub
@@ -207,7 +208,8 @@ def despachar(op, arg, interactivo=False):
 ALIAS = {"new": "nuevo", "crear": "nuevo", "editar": "abrir", "open": "abrir", "run": "correr", "pipeline": "correr",
          "status": "avance", "estado": "avance", "stop": "detener", "resume": "reanudar", "doctor": "entorno",
          "update": "actualizar", "logs": "log", "results": "resultados", "ver": "resultados",
-         "hw": "hardware", "equipo": "hardware", "interfaz": "gui"}
+         "hw": "hardware", "equipo": "hardware", "interfaz": "gui", "verify": "verificar", "test": "verificar",
+         "probar": "verificar"}
 
 
 VIVO = False
@@ -228,6 +230,9 @@ def main(argv=None):
             print(C.VERSION)
         elif op in ("ayuda", "help", "-h", "--help"):
             print(AYUDA)
+        elif op == "verificar":
+            from axd import verificar
+            return verificar.verificar(conservar="--conservar" in argv)
         elif op == "entorno" and arg in ("verificar", "check"):
             entorno.doctor()
         elif op == "entorno" and arg == "instalar":

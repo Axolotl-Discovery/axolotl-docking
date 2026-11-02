@@ -67,7 +67,7 @@ ensure_rosetta() {
   echo "  · Instalando Rosetta 2 (hace falta para smina/ADFRsuite en Apple Silicon)…"
   softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 \
     && ok "Rosetta 2 instalado" \
-    || { fail "no pude instalar Rosetta 2 (corré a mano: softwareupdate --install-rosetta)"; return 1; }
+    || { fail "no pude instalar Rosetta 2 (corre a mano: softwareupdate --install-rosetta)"; return 1; }
 }
 
 ENV_NAME="${AXD_ENV:-$(python3 -c "import json;print(json.load(open('$CONF')).get('entorno','axolotl-docking'))" 2>/dev/null || echo axolotl-docking)}"
@@ -228,4 +228,4 @@ if [ "$PROBLEMAS" = 0 ]; then
 else
   echo "${A}⚠ Terminó con $PROBLEMAS problema(s). Puedes volver a correrlo: lo instalado se respeta.${N}"
 fi
-exit 0
+[ "$PROBLEMAS" = 0 ]
