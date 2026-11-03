@@ -8,8 +8,17 @@ name: Descargas (Windows .exe, Linux .sh, Mac .zip)
 # enlaces  .../releases/latest/download/<archivo>  de la página siempre bajan la
 # última versión. También se puede lanzar a mano (workflow_dispatch) para obtener
 # los archivos como artefactos sin publicar nada. No corre en cada push.
+# Alojamiento temporal para que otras personas prueben: al lanzarlo a mano con
+# «etiqueta_prueba» (p. ej. prueba-1) publica los tres archivos como PRE-RELEASE.
+# Un pre-release NO cuenta como «latest», así que los enlaces de la página
+# (releases/latest/download/...) no cambian. Se borra desde Releases cuando ya no haga falta.
 on:
   workflow_dispatch:
+    inputs:
+      etiqueta_prueba:
+        description: "Opcional: publica como pre-release con esta etiqueta (p. ej. prueba-1)"
+        required: false
+        default: ""
   push:
     tags: ["v*"]
 
@@ -63,9 +72,78 @@ jobs:
             dist/AxolotlDocking-Linux.sh
             dist/AxolotlDocking-Mac.zip
 
+  probar-windows:
+    # Prueba de humo del .exe: instala en silencio, comprueba archivos y accesos
+    # directos, y desinstala. WSL2 no se puede activar en los runners (sin
+    # virtualización anidada), así que NO se prueba la instalación completa.
+    needs: windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: dist
+
+      - name: Instalar en silencio
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\AxolotlDocking-Windows.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=desktopicon' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "El instalador salió con código $($p.ExitCode)" }
+
+      - name: Comprobar archivos y accesos directos
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:LOCALAPPDATA 'Axolotl Docking'
+          foreach ($f in 'instalar-windows.bat','abrir-docking.bat','LICENSE','README.md','unins000.exe') {
+            if (-not (Test-Path (Join-Path $app $f))) { throw "Falta $f en $app" }
+          }
+          $menu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Axolotl Docking'
+          Get-ChildItem $menu | Format-Table Name
+          if (@(Get-ChildItem $menu -Filter *.lnk).Count -lt 2) { throw "Faltan accesos directos en el menú Inicio" }
+
+      - name: abrir-docking.bat sin Ubuntu debe avisar y salir con error
+        shell: cmd
+        run: |
+          wsl -d Ubuntu -e true >nul 2>&1 && (echo Este runner ya tiene Ubuntu: prueba omitida & exit /b 0)
+          call "%LOCALAPPDATA%\Axolotl Docking\abrir-docking.bat" < NUL > salida.txt 2>&1
+          set RC=%ERRORLEVEL%
+          type salida.txt
+          if %RC% NEQ 1 (echo Se esperaba codigo 1, salio %RC% & exit /b 1)
+          findstr /C:"No encuentro Ubuntu" salida.txt || (echo Falta el mensaje esperado & exit /b 1)
+
+      - name: Desinstalar y comprobar que no quedan archivos
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:LOCALAPPDATA 'Axolotl Docking'
+          Start-Process -FilePath (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path (Join-Path $app 'instalar-windows.bat')) { throw "La desinstalación dejó archivos en $app" }
+
+  probar-linux:
+    # Prueba de humo del .sh descargable tal como lo recibiría una persona:
+    # solo la app (el entorno conda/smina/ADFRsuite lo prueba backend-real-install.yml).
+    needs: linux-mac
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-mac
+          path: dist
+      - name: Correr AxolotlDocking-Linux.sh --solo-app y probar el comando
+        run: |
+          bash dist/AxolotlDocking-Linux.sh --solo-app
+          export PATH="$HOME/.local/bin:$PATH"
+          Docking version
+          Docking ayuda | head -5
+      - name: Comprobar el .zip de Mac (permisos y contenido)
+        run: |
+          unzip -Z dist/AxolotlDocking-Mac.zip | grep -- '-rwx.*Instalar Axolotl Docking.command'
+          unzip -p dist/AxolotlDocking-Mac.zip "Instalar Axolotl Docking.command" | bash -n
+
   publicar:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux-mac]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.etiqueta_prueba != ''
+    needs: [probar-windows, probar-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -75,6 +153,9 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.etiqueta_prueba != '' && inputs.etiqueta_prueba || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ inputs.etiqueta_prueba != '' }}
           files: |
             dist/AxolotlDocking-Windows.exe
             dist/AxolotlDocking-Linux.sh

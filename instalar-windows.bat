@@ -31,17 +31,17 @@ if %BUILD% LSS 19041 goto :windows_viejo
 
 rem --- 2. Ya hay Ubuntu en WSL?
 wsl -d %DISTRO% -e true >nul 2>&1
-if not errorlevel 1 goto :instalar_dentro
+if %errorlevel%==0 goto :instalar_dentro
 
 rem --- 3. Instalar WSL + Ubuntu (necesita administrador)
 net session >nul 2>&1
-if errorlevel 1 goto :pedir_admin
+if not %errorlevel%==0 goto :pedir_admin
 
 echo  [1/3] Instalando WSL2 y Ubuntu. Esto puede tardar varios minutos...
 echo.
 wsl --set-default-version 2 >nul 2>&1
 wsl --install -d %DISTRO%
-if errorlevel 1 goto :fallo_wsl
+if not %errorlevel%==0 goto :fallo_wsl
 
 echo.
 echo  ----------------------------------------------------------------
@@ -64,13 +64,13 @@ echo        Los pasos de conda, smina y ADFRsuite tardan; no cierres la ventana.
 echo.
 wsl --set-default-version 2 >nul 2>&1
 wsl -d %DISTRO% -- bash -lc "command -v curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl); curl -fsSL %INSTALL_URL% | bash"
-if errorlevel 1 goto :fallo_instalacion
+if not %errorlevel%==0 goto :fallo_instalacion
 
 echo.
 echo  [3/3] Verificando la instalacion con un docking de prueba...
 echo.
 wsl -d %DISTRO% -- bash -lic "Docking verificar"
-if errorlevel 1 goto :fallo_verificacion
+if not %errorlevel%==0 goto :fallo_verificacion
 
 echo.
 echo  ----------------------------------------------------------------
